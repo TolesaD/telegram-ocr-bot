@@ -1,7 +1,6 @@
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 import logging
-from datetime import datetime
 import re
 
 logger = logging.getLogger(__name__)
@@ -39,22 +38,17 @@ Recurrence: daily, weekly, monthly (optional)
             )
             return
         
-        # Parse arguments
         time_str = context.args[0]
         recurrence = None
         
-        # Check for recurrence at the end
         if context.args[-1].lower() in ['daily', 'weekly', 'monthly']:
             recurrence = context.args[-1].lower()
             message = ' '.join(context.args[1:-1])
         else:
             message = ' '.join(context.args[1:])
         
-        # Validate time format
         if not re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str):
-            await update.message.reply_text(
-                "❌ Invalid time format. Please use HH:MM (24-hour format)"
-            )
+            await update.message.reply_text("❌ Invalid time format. Use HH:MM")
             return
         
         try:
@@ -66,24 +60,31 @@ Recurrence: daily, weekly, monthly (optional)
                 recurrence=recurrence
             )
             
+            if reminder_id == "no_database":
+                await update.message.reply_text("❌ Database not available.")
+                return
+            elif reminder_id == "error":
+                await update.message.reply_text("❌ Failed to set reminder.")
+                return
+            
             recurrence_text = f" ({recurrence})" if recurrence else ""
             await update.message.reply_text(
-                f"✅ Reminder set successfully!\n"
-                f"⏰ Time: {time_str}{recurrence_text}\n"
-                f"📝 Message: {message}\n"
-                f"🆔 ID: {reminder_id}"
+                f"✅ Reminder set!\n"
+                f"⏰ {time_str}{recurrence_text}\n"
+                f"📝 {message}\n"
+                f"🆔 {reminder_id}"
             )
             
         except Exception as e:
             logger.error(f"Error setting reminder: {e}")
-            await update.message.reply_text("❌ Failed to set reminder. Please try again.")
+            await update.message.reply_text("❌ Failed to set reminder.")
     
     async def view_reminders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         reminders = self.reminder_manager.get_user_reminders(user_id)
         
         if not reminders:
-            await update.message.reply_text("📭 You have no active reminders.")
+            await update.message.reply_text("📭 No active reminders.")
             return
         
         reminders_text = "📋 Your Active Reminders:\n\n"
@@ -101,11 +102,7 @@ Recurrence: daily, weekly, monthly (optional)
     
     async def cancel_reminder(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not context.args:
-            await update.message.reply_text(
-                "❌ Please provide reminder ID.\n"
-                "Usage: /cancelreminder <reminder_id>\n"
-                "Use /viewreminders to see your reminder IDs"
-            )
+            await update.message.reply_text("❌ Please provide reminder ID.")
             return
         
         reminder_id = context.args[0]
@@ -114,25 +111,15 @@ Recurrence: daily, weekly, monthly (optional)
         try:
             success = self.reminder_manager.cancel_reminder(reminder_id, user_id)
             if success:
-                await update.message.reply_text("✅ Reminder cancelled successfully!")
+                await update.message.reply_text("✅ Reminder cancelled!")
             else:
-                await update.message.reply_text(
-                    "❌ Reminder not found or you don't have permission to cancel it."
-                )
+                await update.message.reply_text("❌ Reminder not found.")
         except Exception as e:
             logger.error(f"Error cancelling reminder: {e}")
-            await update.message.reply_text("❌ Invalid reminder ID format.")
+            await update.message.reply_text("❌ Invalid reminder ID.")
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text(
-            "🤖 I'm a reminder bot! Use /start to see available commands."
-        )
+        await update.message.reply_text("🤖 Use /start to see available commands.")
     
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        logger.error(f"Exception while handling an update: {context.error}")
-        
-        # Notify user about error
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "❌ An error occurred. Please try again later."
-            )
+        logger.error(f"Exception: {context.error}")

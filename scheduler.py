@@ -14,26 +14,24 @@ class ReminderScheduler:
     
     async def start(self):
         self.is_running = True
-        logger.info("Reminder scheduler started")
+        logger.info("⏰ Reminder scheduler started")
         
         while self.is_running:
             try:
                 await self.check_reminders()
-                await asyncio.sleep(30)  # Check every 30 seconds
+                await asyncio.sleep(30)
             except Exception as e:
                 logger.error(f"Error in scheduler: {e}")
                 await asyncio.sleep(60)
     
     async def stop(self):
         self.is_running = False
-        logger.info("Reminder scheduler stopped")
     
     async def check_reminders(self):
         due_reminders = self.reminder_manager.get_due_reminders()
         
         for reminder in due_reminders:
             try:
-                # Send reminder message
                 recurrence_text = f" ({reminder['recurrence']})" if reminder['recurrence'] else ""
                 message_text = (
                     f"🔔 Reminder{recurrence_text}\n"
@@ -46,23 +44,14 @@ class ReminderScheduler:
                     text=message_text
                 )
                 
-                # Update next reminder time for recurring reminders
                 if reminder['recurrence']:
                     self.reminder_manager.update_next_reminder(str(reminder['_id']))
                 else:
-                    # Deactivate one-time reminders
-                    self.reminder_manager.cancel_reminder(
-                        str(reminder['_id']), 
-                        reminder['user_id']
-                    )
+                    self.reminder_manager.cancel_reminder(str(reminder['_id']), reminder['user_id'])
                 
                 logger.info(f"Sent reminder to user {reminder['user_id']}")
                 
             except Exception as e:
-                logger.error(f"Failed to send reminder {reminder['_id']}: {e}")
-                # If user blocked bot or chat doesn't exist, deactivate reminder
+                logger.error(f"Failed to send reminder: {e}")
                 if "chat not found" in str(e).lower() or "blocked" in str(e).lower():
-                    self.reminder_manager.cancel_reminder(
-                        str(reminder['_id']), 
-                        reminder['user_id']
-                    )
+                    self.reminder_manager.cancel_reminder(str(reminder['_id']), reminder['user_id'])

@@ -15,6 +15,3 @@ class Config:
     WEBHOOK_URL = os.getenv('WEBHOOK_URL')
     WEBAPP_HOST = os.getenv('WEBAPP_HOST', '0.0.0.0')
     WEBAPP_PORT = int(os.getenv('WEBAPP_PORT', 5000))
-    
-    # Admin ID (optional)
-    ADMIN_ID = os.getenv('ADMIN_ID')
