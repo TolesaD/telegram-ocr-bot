@@ -1,0 +1,33 @@
+name: Deploy to PythonAnywhere
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Create deployment package
+      run: |
+        # Create a zip file of the project
+        zip -r deployment.zip . -x "*.git*" "*.github*" "venv/*" ".env"
+        echo "Deployment package created"
+    
+    - name: Upload deployment package
+      run: |
+        # This would upload to a location you can download from PythonAnywhere
+        # Since we can't SSH, we'll use a different approach
+        echo "Manual deployment required - download from GitHub releases"
+    
+    - name: Create deployment instructions
+      run: |
+        echo "## Manual Deployment Required" >> $GITHUB_STEP_SUMMARY
+        echo "Since PythonAnywhere free account doesn't support SSH:" >> $GITHUB_STEP_SUMMARY
+        echo "1. Go to PythonAnywhere Console" >> $GITHUB_STEP_SUMMARY
+        echo "2. Run: cd telegram-reminder-bot" >> $GITHUB_STEP_SUMMARY
+        echo "3. Run: git pull origin main" >> $GITHUB_STEP_SUMMARY
+        echo "4. Reload your web app" >> $GITHUB_STEP_SUMMARY
