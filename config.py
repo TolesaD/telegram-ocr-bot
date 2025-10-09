@@ -4,14 +4,39 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    # Telegram Bot Token
-    BOT_TOKEN = os.getenv('BOT_TOKEN')
-    
-    # MongoDB Configuration
+    TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
     MONGODB_URI = os.getenv('MONGODB_URI')
-    DATABASE_NAME = os.getenv('DATABASE_NAME', 'reminder_bot')
+    DATABASE_NAME = 'expense_tracker'
     
-    # Webhook Configuration
-    WEBHOOK_URL = os.getenv('WEBHOOK_URL')
-    WEBAPP_HOST = os.getenv('WEBAPP_HOST', '0.0.0.0')
-    WEBAPP_PORT = int(os.getenv('WEBAPP_PORT', 5000))
+    # Expense categories
+    CATEGORIES = [
+        '🍔 Food & Dining',
+        '🏠 Housing',
+        '🚗 Transportation',
+        '🛒 Shopping',
+        '💊 Healthcare',
+        '🎯 Entertainment',
+        '📚 Education',
+        '✈️ Travel',
+        '💡 Utilities',
+        '💰 Savings',
+        '📱 Technology',
+        '🎁 Gifts',
+        '🏋️ Fitness',
+        '🐾 Pets',
+        '📊 Other'
+    ]
+    
+    # Budget recommendations based on income
+    BUDGET_RECOMMENDATIONS = {
+        '🍔 Food & Dining': 0.15,
+        '🏠 Housing': 0.25,
+        '🚗 Transportation': 0.15,
+        '🛒 Shopping': 0.10,
+        '💊 Healthcare': 0.05,
+        '🎯 Entertainment': 0.05,
+        '📚 Education': 0.05,
+        '✈️ Travel': 0.05,
+        '💡 Utilities': 0.08,
+        '💰 Savings': 0.12
+    }
