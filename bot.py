@@ -3,6 +3,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime
 import os
+import threading
+import asyncio
 
 from config import Config
 from models import db
@@ -225,8 +227,6 @@ I'll help you track your expenses and manage your finances effectively.
                 # Update user income
                 user = db.get_user(user_id)
                 if user:
-                    # For SQLite, we need to update the user
-                    from models import db
                     cursor = db.conn.cursor()
                     cursor.execute('UPDATE users SET monthly_income = ? WHERE user_id = ?', (income, user_id))
                     db.conn.commit()
@@ -430,39 +430,45 @@ I'll help you track your expenses and manage your finances effectively.
             "**Example:** `50.00 Lunch at restaurant`"
         )
 
-    # Webhook methods for production
-    async def set_webhook(self, webhook_url):
-        """Set webhook URL"""
-        await self.application.bot.set_webhook(
-            url=f"{webhook_url}/{Config.TELEGRAM_TOKEN}",
-            secret_token=None
-        )
-    
-    def run_webhook(self, host='0.0.0.0', port=5000, webhook_url=None):
-        """Run the bot with webhook (for production)"""
-        if webhook_url:
-            # Set webhook on startup
-            self.application.run_webhook(
-                listen=host,
-                port=port,
-                url_path=Config.TELEGRAM_TOKEN,
-                webhook_url=f"{webhook_url}/{Config.TELEGRAM_TOKEN}",
-                secret_token=None
-            )
-        else:
-            logger.error("Webhook URL is required for production")
-
-    def run_polling(self):
-        """Run the bot with polling (for development)"""
-        print("🤖 Starting Expense Tracker Bot in development mode...")
-        print("✅ Bot is now running and listening for messages...")
-        self.application.run_polling()
+# Initialize the bot
+bot = ExpenseTrackerBot()
 
 # Flask app for production
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
-bot = ExpenseTrackerBot()
+
+# Global variable to track bot initialization
+bot_initialized = False
+
+def initialize_bot():
+    """Initialize the bot application"""
+    global bot_initialized
+    try:
+        # Initialize the bot application
+        import asyncio
+        
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Initialize the application
+        loop.run_until_complete(bot.application.initialize())
+        bot_initialized = True
+        logger.info("✅ Bot application initialized successfully for webhook mode!")
+        
+    except Exception as e:
+        logger.error(f"❌ Bot initialization failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+# Initialize bot when Flask starts
+@app.before_first_request
+def before_first_request():
+    if not bot_initialized:
+        logger.info("🚀 Initializing bot application...")
+        init_thread = threading.Thread(target=initialize_bot, daemon=True)
+        init_thread.start()
 
 @app.route('/')
 def home():
@@ -470,52 +476,42 @@ def home():
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "healthy", "service": "expense-tracker-bot"})
+    return jsonify({
+        "status": "healthy", 
+        "service": "expense-tracker-bot", 
+        "bot_initialized": bot_initialized
+    })
 
 @app.route(f'/{Config.TELEGRAM_TOKEN}', methods=['POST'])
 def webhook():
     """Webhook endpoint for Telegram"""
     try:
-        update = Update.de_json(request.get_json(), bot.application.bot)
+        if not bot_initialized:
+            logger.warning("⚠️ Bot not initialized yet, initializing now...")
+            initialize_bot()
+            
+        update_json = request.get_json()
+        logger.info(f"📨 Received webhook update")
+        
+        # Properly process the update
+        update = Update.de_json(update_json, bot.application.bot)
         bot.application.update_queue.put(update)
+        
+        logger.info("✅ Update queued for processing")
         return jsonify({"status": "ok"})
+        
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
+        logger.error(f"❌ Webhook error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/set_webhook', methods=['GET'])
-def set_webhook():
-    """Manually set webhook URL"""
-    webhook_url = request.args.get('url')
-    if webhook_url:
-        try:
-            # Import and run the async function
-            import asyncio
-            asyncio.run(bot.set_webhook(webhook_url))
-            return jsonify({"status": "success", "message": f"Webhook set to {webhook_url}"})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
-    return jsonify({"status": "error", "message": "No URL provided"}), 400
-
-@app.route('/delete_webhook', methods=['GET'])
-def delete_webhook():
-    """Delete webhook"""
-    try:
-        import asyncio
-        asyncio.run(bot.application.bot.delete_webhook())
-        return jsonify({"status": "success", "message": "Webhook deleted"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+# Initialize bot when module is imported
+logger.info("🔧 Starting bot initialization...")
+initialize_bot()
 
 # Development mode
 if __name__ == '__main__':
-    import os
-    if os.environ.get('ENVIRONMENT') == 'production':
-        # In production, this will be run by gunicorn
-        print("🚀 Starting in production mode...")
-        # Webhook URL will be set when running with gunicorn
-        pass
-    else:
-        # Development mode - use polling
-        print("🔧 Starting in development mode...")
-        bot.run_polling()
+    # For development - use polling
+    print("🔧 Starting in development mode (polling)...")
+    bot.application.run_polling()
