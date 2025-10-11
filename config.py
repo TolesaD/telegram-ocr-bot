@@ -4,14 +4,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-    MONGODB_URI = os.getenv('MONGODB_URI')
-    DATABASE_NAME = 'expense_tracker'
+    TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '8452300221:AAHj8GaG_hE5OLaQslUl2I8b1rW8zCqYWG4')
+    ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
     
     # Expense categories
     CATEGORIES = [
-        '🍔 Food & Dining',
-        '🏠 Housing',
+        '🍔 Food',
+        '🏠 Housing', 
         '🚗 Transportation',
         '🛒 Shopping',
         '💊 Healthcare',
@@ -29,7 +28,7 @@ class Config:
     
     # Budget recommendations based on income
     BUDGET_RECOMMENDATIONS = {
-        '🍔 Food & Dining': 0.15,
+        '🍔 Food': 0.15,
         '🏠 Housing': 0.25,
         '🚗 Transportation': 0.15,
         '🛒 Shopping': 0.10,
