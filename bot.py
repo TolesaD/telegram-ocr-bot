@@ -5,10 +5,11 @@ from datetime import datetime
 import os
 import threading
 import asyncio
+import queue
 
 from config import Config
 from models import db
-from utils import generate_expense_chart, get_spending_tips, format_currency, format_monthly_report, generate_text_visualization
+from utils import format_currency, format_monthly_report, get_spending_tips, generate_text_visualization
 
 # Set up logging
 logging.basicConfig(
@@ -17,35 +18,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Global application instance
+application = None
+update_queue = queue.Queue()
+
 class ExpenseTrackerBot:
     def __init__(self):
-        self.application = Application.builder().token(Config.TELEGRAM_TOKEN).build()
         self.setup_handlers()
     
     def setup_handlers(self):
+        global application
+        application = Application.builder().token(Config.TELEGRAM_TOKEN).build()
+        
         # Command handlers
-        self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("help", self.help_command))
-        self.application.add_handler(CommandHandler("addexpense", self.add_expense))
-        self.application.add_handler(CommandHandler("report", self.monthly_report))
-        self.application.add_handler(CommandHandler("budget", self.set_budget))
-        self.application.add_handler(CommandHandler("tips", self.spending_tips))
-        self.application.add_handler(CommandHandler("stats", self.expense_stats))
+        application.add_handler(CommandHandler("start", self.start))
+        application.add_handler(CommandHandler("help", self.help_command))
+        application.add_handler(CommandHandler("addexpense", self.add_expense))
+        application.add_handler(CommandHandler("report", self.monthly_report))
+        application.add_handler(CommandHandler("budget", self.set_budget))
+        application.add_handler(CommandHandler("tips", self.spending_tips))
+        application.add_handler(CommandHandler("stats", self.expense_stats))
         
         # Callback query handlers
-        self.application.add_handler(CallbackQueryHandler(self.button_handler))
+        application.add_handler(CallbackQueryHandler(self.button_handler))
         
         # Message handlers
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
         # Error handler
-        self.application.add_error_handler(self.error_handler)
+        application.add_error_handler(self.error_handler)
     
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Log errors and send a friendly message."""
         logger.error("Exception while handling an update:", exc_info=context.error)
         
-        # Send a message to the user
         if update and hasattr(update, 'effective_user'):
             try:
                 await context.bot.send_message(
@@ -59,7 +65,6 @@ class ExpenseTrackerBot:
         user = update.effective_user
         user_id = user.id
         
-        # Check if user exists, if not create
         if not db.get_user(user_id):
             db.create_user(user_id, user.username, user.first_name)
             await update.message.reply_text(f"👋 Welcome {user.first_name}! Your account has been created!")
@@ -125,7 +130,6 @@ I'll help you track your expenses and manage your finances effectively.
             parse_mode='Markdown'
         )
         
-        # Show category buttons
         keyboard = []
         for i in range(0, len(Config.CATEGORIES), 2):
             row = []
@@ -149,7 +153,6 @@ I'll help you track your expenses and manage your finances effectively.
         report_text = format_monthly_report(expense_data, user_currency, now.month, now.year)
         await update.message.reply_text(report_text)
         
-        # Add text visualization
         if expense_data:
             viz_text = generate_text_visualization(expense_data, user_currency)
             await update.message.reply_text(viz_text)
@@ -160,21 +163,11 @@ I'll help you track your expenses and manage your finances effectively.
         
         if not user or not user.get('monthly_income'):
             context.user_data['awaiting_income'] = True
-            await update.message.reply_text(
-                "💰 **Set Monthly Income**\n\n"
-                "First, let's set your monthly income. Please enter your monthly income:\n\n"
-                "**Example:** `3000`"
-            )
+            await update.message.reply_text("💰 Enter monthly income:")
             return
         
         context.user_data['setting_budget'] = True
-        await update.message.reply_text(
-            f"📝 **Set Budget**\n\n"
-            f"Your monthly income: {format_currency(user['monthly_income'], user.get('currency', 'USD'))}\n\n"
-            "Please enter budget in format:\n"
-            "`Category Amount`\n\n"
-            "**Example:** `Food 300`"
-        )
+        await update.message.reply_text("📝 Enter: `Category Amount`\nExample: `Food 300`")
     
     async def spending_tips(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -186,11 +179,7 @@ I'll help you track your expenses and manage your finances effectively.
         monthly_income = user.get('monthly_income', 0) if user else 0
         
         tips = get_spending_tips(expense_data, budgets, monthly_income)
-        
-        tips_text = "💡 **Personalized Saving Tips**\n\n"
-        for i, tip in enumerate(tips, 1):
-            tips_text += f"{i}. {tip}\n\n"
-        
+        tips_text = "💡 **Tips**\n\n" + "\n".join(f"• {tip}" for tip in tips)
         await update.message.reply_text(tips_text)
     
     async def expense_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -199,22 +188,18 @@ I'll help you track your expenses and manage your finances effectively.
         expenses = db.get_user_expenses(user_id)
         
         if not expenses:
-            await update.message.reply_text("📊 No expenses recorded yet. Start by adding your first expense using /addexpense!")
+            await update.message.reply_text("📊 No expenses yet. Use /addexpense")
             return
         
-        total_spent = sum(expense['amount'] for expense in expenses)
-        avg_expense = total_spent / len(expenses)
-        most_expensive = max(expenses, key=lambda x: x['amount'])
+        total = sum(e['amount'] for e in expenses)
+        avg = total / len(expenses)
+        max_exp = max(expenses, key=lambda x: x['amount'])
         
-        stats_text = f"""
-📈 **Your Expense Statistics**
-
-💵 Total Spent: {format_currency(total_spent, user.get('currency', 'USD') if user else 'USD')}
-📦 Total Expenses: {len(expenses)}
-📊 Average Expense: {format_currency(avg_expense, user.get('currency', 'USD') if user else 'USD')}
-💰 Most Expensive: {format_currency(most_expensive['amount'], user.get('currency', 'USD') if user else 'USD')} - {most_expensive['category']}
-        """
-        
+        stats_text = f"""📈 **Statistics**
+💵 Total: {format_currency(total, user.get('currency', 'USD') if user else 'USD')}
+📦 Count: {len(expenses)}
+📊 Average: {format_currency(avg, user.get('currency', 'USD') if user else 'USD')}
+💰 Largest: {format_currency(max_exp['amount'], user.get('currency', 'USD') if user else 'USD')} - {max_exp['category']}"""
         await update.message.reply_text(stats_text)
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -224,251 +209,128 @@ I'll help you track your expenses and manage your finances effectively.
         if context.user_data.get('awaiting_income'):
             try:
                 income = float(text)
-                # Update user income
-                user = db.get_user(user_id)
-                if user:
-                    cursor = db.conn.cursor()
-                    cursor.execute('UPDATE users SET monthly_income = ? WHERE user_id = ?', (income, user_id))
-                    db.conn.commit()
-                
+                cursor = db.conn.cursor()
+                cursor.execute('UPDATE users SET monthly_income = ? WHERE user_id = ?', (income, user_id))
+                db.conn.commit()
                 context.user_data['awaiting_income'] = False
-                await update.message.reply_text(
-                    f"✅ Monthly income set to {format_currency(income, 'USD')}!\n\n"
-                    "Now let's set up your budgets. Use /budget to continue."
-                )
+                await update.message.reply_text(f"✅ Income set to {format_currency(income, 'USD')}")
             except ValueError:
-                await update.message.reply_text("❌ Please enter a valid number for income.")
+                await update.message.reply_text("❌ Enter valid number")
         
         elif context.user_data.get('awaiting_expense'):
-            await self.process_expense_input(update, context, text)
+            parts = text.split(' ', 2)
+            if len(parts) >= 2:
+                try:
+                    amount, category = float(parts[0]), parts[1]
+                    desc = parts[2] if len(parts) > 2 else "No description"
+                    if db.add_expense(user_id, amount, category, desc):
+                        user = db.get_user(user_id)
+                        curr = user.get('currency', 'USD') if user else 'USD'
+                        await update.message.reply_text(f"✅ Added: {format_currency(amount, curr)} - {category}")
+                    context.user_data['awaiting_expense'] = False
+                except ValueError:
+                    await update.message.reply_text("❌ Enter valid amount")
         
         elif context.user_data.get('setting_budget'):
-            await self.process_budget_input(update, context, text)
-    
-    async def process_expense_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-        user_id = update.effective_user.id
-        
-        # Simple parsing: amount category description
-        parts = text.split(' ', 2)
-        if len(parts) < 2:
-            await update.message.reply_text("❌ Please use format: Amount Category Description")
-            return
-        
-        try:
-            amount = float(parts[0])
-            category = parts[1]
-            description = parts[2] if len(parts) > 2 else "No description"
-            
-            # Validate category
-            valid_categories = [cat.split(' ', 1)[-1] for cat in Config.CATEGORIES]
-            if category not in valid_categories:
-                await update.message.reply_text("❌ Invalid category. Please use one of the provided categories.")
-                return
-            
-            success = db.add_expense(user_id, amount, category, description)
-            context.user_data['awaiting_expense'] = False
-            
-            if success:
-                user = db.get_user(user_id)
-                await update.message.reply_text(
-                    f"✅ **Expense Added Successfully!**\n\n"
-                    f"💵 Amount: {format_currency(amount, user.get('currency', 'USD') if user else 'USD')}\n"
-                    f"📦 Category: {category}\n"
-                    f"📝 Description: {description}\n\n"
-                    f"Use /report to see your spending summary!"
-                )
-            else:
-                await update.message.reply_text("❌ Error adding expense. Please try again.")
-            
-        except ValueError:
-            await update.message.reply_text("❌ Please enter a valid amount.")
-        except Exception as e:
-            logger.error(f"Error adding expense: {e}")
-            await update.message.reply_text("❌ Error adding expense. Please try again.")
-    
-    async def process_budget_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-        user_id = update.effective_user.id
-        parts = text.split(' ', 1)
-        
-        if len(parts) < 2:
-            await update.message.reply_text("❌ Please use format: Category Amount")
-            return
-        
-        category = parts[0]
-        try:
-            amount = float(parts[1])
-            success = db.set_budget(user_id, category, amount)
-            
-            if success:
-                user = db.get_user(user_id)
-                await update.message.reply_text(
-                    f"✅ **Budget Set Successfully!**\n\n"
-                    f"📦 Category: {category}\n"
-                    f"💰 Amount: {format_currency(amount, user.get('currency', 'USD') if user else 'USD')}"
-                )
-            else:
-                await update.message.reply_text("❌ Error setting budget. Please try again.")
-            
-        except ValueError:
-            await update.message.reply_text("❌ Please enter a valid amount.")
+            parts = text.split(' ', 1)
+            if len(parts) == 2:
+                try:
+                    category, amount = parts[0], float(parts[1])
+                    if db.set_budget(user_id, category, amount):
+                        user = db.get_user(user_id)
+                        curr = user.get('currency', 'USD') if user else 'USD'
+                        await update.message.reply_text(f"✅ Budget: {category} - {format_currency(amount, curr)}")
+                    context.user_data['setting_budget'] = False
+                except ValueError:
+                    await update.message.reply_text("❌ Enter valid amount")
     
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
-        
         data = query.data
-        user_id = query.from_user.id
         
         if data == "add_expense":
-            await self.add_expense_callback(query, context)
+            context.user_data['awaiting_expense'] = True
+            await query.edit_message_text("💵 Enter: `Amount Category Description`\nExample: `25.00 Food Lunch`")
         elif data == "monthly_report":
-            await self.monthly_report_callback(query, context)
+            user_id = query.from_user.id
+            now = datetime.now()
+            data = db.get_monthly_summary(user_id, now.month, now.year)
+            user = db.get_user(user_id)
+            currency = user.get('currency', 'USD') if user else 'USD'
+            await query.edit_message_text(format_monthly_report(data, currency, now.month, now.year))
         elif data == "set_budget":
-            await self.set_budget_callback(query, context)
+            user_id = query.from_user.id
+            user = db.get_user(user_id)
+            if not user or not user.get('monthly_income'):
+                context.user_data['awaiting_income'] = True
+                await query.edit_message_text("💰 Enter monthly income:")
+            else:
+                context.user_data['setting_budget'] = True
+                await query.edit_message_text("📝 Enter: `Category Amount`\nExample: `Food 300`")
         elif data == "saving_tips":
-            await self.spending_tips_callback(query, context)
+            user_id = query.from_user.id
+            now = datetime.now()
+            user = db.get_user(user_id)
+            data = db.get_monthly_summary(user_id, now.month, now.year)
+            budgets = db.get_user_budgets(user_id)
+            income = user.get('monthly_income', 0) if user else 0
+            tips = get_spending_tips(data, budgets, income)
+            await query.edit_message_text("💡 " + "\n".join(tips))
         elif data == "view_stats":
-            await self.expense_stats_callback(query, context)
+            user_id = query.from_user.id
+            user = db.get_user(user_id)
+            expenses = db.get_user_expenses(user_id)
+            currency = user.get('currency', 'USD') if user else 'USD'
+            
+            if not expenses:
+                await query.edit_message_text("📊 No expenses yet")
+                return
+            
+            total = sum(e['amount'] for e in expenses)
+            avg = total / len(expenses)
+            max_exp = max(expenses, key=lambda x: x['amount'])
+            
+            text = f"""📈 **Statistics**
+💵 Total: {format_currency(total, currency)}
+📦 Count: {len(expenses)}
+📊 Average: {format_currency(avg, currency)}
+💰 Largest: {format_currency(max_exp['amount'], currency)} - {max_exp['category']}"""
+            await query.edit_message_text(text)
         elif data.startswith("category_"):
-            await self.category_selection(query, context, data)
-    
-    async def add_expense_callback(self, query, context):
-        context.user_data['awaiting_expense'] = True
-        await query.edit_message_text(
-            "💵 **Add Expense**\n\n"
-            "Please enter your expense in this format:\n"
-            "`Amount Category Description`\n\n"
-            "**Example:** `50.00 Food Lunch at restaurant`"
-        )
-    
-    async def monthly_report_callback(self, query, context):
-        user_id = query.from_user.id
-        now = datetime.now()
-        
-        expense_data = db.get_monthly_summary(user_id, now.month, now.year)
-        user = db.get_user(user_id)
-        user_currency = user.get('currency', 'USD') if user else 'USD'
-        
-        report_text = format_monthly_report(expense_data, user_currency, now.month, now.year)
-        await query.edit_message_text(report_text)
-        
-        if expense_data:
-            viz_text = generate_text_visualization(expense_data, user_currency)
-            await context.bot.send_message(chat_id=query.message.chat_id, text=viz_text)
-    
-    async def set_budget_callback(self, query, context):
-        user_id = query.from_user.id
-        user = db.get_user(user_id)
-        
-        if not user or not user.get('monthly_income'):
-            context.user_data['awaiting_income'] = True
-            await query.edit_message_text(
-                "💰 **Set Monthly Income**\n\n"
-                "First, let's set your monthly income. Please enter your monthly income:\n\n"
-                "**Example:** `3000`"
-            )
-            return
-        
-        context.user_data['setting_budget'] = True
-        await query.edit_message_text(
-            f"📝 **Set Budget**\n\n"
-            f"Your monthly income: {format_currency(user['monthly_income'], user.get('currency', 'USD'))}\n\n"
-            "Please enter budget in format:\n"
-            "`Category Amount`\n\n"
-            "**Example:** `Food 300`"
-        )
-    
-    async def spending_tips_callback(self, query, context):
-        user_id = query.from_user.id
-        now = datetime.now()
-        user = db.get_user(user_id)
-        
-        expense_data = db.get_monthly_summary(user_id, now.month, now.year)
-        budgets = db.get_user_budgets(user_id)
-        monthly_income = user.get('monthly_income', 0) if user else 0
-        
-        tips = get_spending_tips(expense_data, budgets, monthly_income)
-        
-        tips_text = "💡 **Personalized Saving Tips**\n\n"
-        for i, tip in enumerate(tips, 1):
-            tips_text += f"{i}. {tip}\n\n"
-        
-        await query.edit_message_text(tips_text)
-    
-    async def expense_stats_callback(self, query, context):
-        user_id = query.from_user.id
-        user = db.get_user(user_id)
-        expenses = db.get_user_expenses(user_id)
-        
-        if not expenses:
-            await query.edit_message_text("📊 No expenses recorded yet. Start by adding your first expense using /addexpense!")
-            return
-        
-        total_spent = sum(expense['amount'] for expense in expenses)
-        avg_expense = total_spent / len(expenses)
-        most_expensive = max(expenses, key=lambda x: x['amount'])
-        
-        stats_text = f"""
-📈 **Your Expense Statistics**
-
-💵 Total Spent: {format_currency(total_spent, user.get('currency', 'USD') if user else 'USD')}
-📦 Total Expenses: {len(expenses)}
-📊 Average Expense: {format_currency(avg_expense, user.get('currency', 'USD') if user else 'USD')}
-💰 Most Expensive: {format_currency(most_expensive['amount'], user.get('currency', 'USD') if user else 'USD')} - {most_expensive['category']}
-        """
-        
-        await query.edit_message_text(stats_text)
-    
-    async def category_selection(self, query, context, data):
-        category_index = int(data.split("_")[1])
-        category = Config.CATEGORIES[category_index]
-        context.user_data['selected_category'] = category
-        await query.edit_message_text(
-            f"📦 Selected category: {category}\n\n"
-            "Now please enter the amount and description:\n"
-            "`Amount Description`\n\n"
-            "**Example:** `50.00 Lunch at restaurant`"
-        )
+            category_index = int(data.split("_")[1])
+            category = Config.CATEGORIES[category_index]
+            context.user_data['selected_category'] = category
+            await query.edit_message_text(f"📦 {category}\nEnter: `Amount Description`\nExample: `50.00 Lunch`")
 
 # Initialize the bot
 bot = ExpenseTrackerBot()
 
-# Flask app for production
+# Flask app
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Global variable to track bot initialization
-bot_initialized = False
+# Process updates in background
+def process_updates():
+    """Process updates from the queue"""
+    while True:
+        try:
+            update = update_queue.get(timeout=1)
+            if update is None:  # Shutdown signal
+                break
+            asyncio.run_coroutine_threadsafe(
+                application.process_update(update), 
+                application._get_running_loop()
+            )
+        except queue.Empty:
+            continue
+        except Exception as e:
+            logger.error(f"Error processing update: {e}")
 
-def initialize_bot():
-    """Initialize the bot application"""
-    global bot_initialized
-    try:
-        # Initialize the bot application
-        import asyncio
-        
-        # Create a new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Initialize the application
-        loop.run_until_complete(bot.application.initialize())
-        bot_initialized = True
-        logger.info("✅ Bot application initialized successfully for webhook mode!")
-        
-    except Exception as e:
-        logger.error(f"❌ Bot initialization failed: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-
-# Initialize bot when Flask starts
-@app.before_first_request
-def before_first_request():
-    if not bot_initialized:
-        logger.info("🚀 Initializing bot application...")
-        init_thread = threading.Thread(target=initialize_bot, daemon=True)
-        init_thread.start()
+# Start update processor thread
+processor_thread = threading.Thread(target=process_updates, daemon=True)
+processor_thread.start()
 
 @app.route('/')
 def home():
@@ -476,42 +338,41 @@ def home():
 
 @app.route('/health')
 def health():
-    return jsonify({
-        "status": "healthy", 
-        "service": "expense-tracker-bot", 
-        "bot_initialized": bot_initialized
-    })
+    return jsonify({"status": "healthy", "service": "expense-tracker-bot"})
 
 @app.route(f'/{Config.TELEGRAM_TOKEN}', methods=['POST'])
 def webhook():
     """Webhook endpoint for Telegram"""
     try:
-        if not bot_initialized:
-            logger.warning("⚠️ Bot not initialized yet, initializing now...")
-            initialize_bot()
-            
         update_json = request.get_json()
-        logger.info(f"📨 Received webhook update")
+        logger.info(f"📨 Received update from Telegram")
         
-        # Properly process the update
-        update = Update.de_json(update_json, bot.application.bot)
-        bot.application.update_queue.put(update)
+        # Create update object and add to queue
+        update = Update.de_json(update_json, application.bot)
+        update_queue.put(update)
         
         logger.info("✅ Update queued for processing")
         return jsonify({"status": "ok"})
         
     except Exception as e:
         logger.error(f"❌ Webhook error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Initialize bot when module is imported
-logger.info("🔧 Starting bot initialization...")
-initialize_bot()
+# Initialize the application
+def initialize_app():
+    """Initialize the application"""
+    try:
+        # We don't need to run polling, just initialize
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(application.initialize())
+        logger.info("✅ Application initialized for webhook mode")
+    except Exception as e:
+        logger.error(f"❌ Initialization error: {e}")
 
-# Development mode
+# Initialize when module loads
+initialize_app()
+
 if __name__ == '__main__':
-    # For development - use polling
-    print("🔧 Starting in development mode (polling)...")
-    bot.application.run_polling()
+    # Development mode
+    application.run_polling()
