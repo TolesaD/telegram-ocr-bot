@@ -35,4 +35,10 @@ SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'tolesadebushe9@gmail.com')
 
 # Admin User IDs (optional)
 admin_ids_str = os.getenv('ADMIN_IDS', '')
-ADMIN_IDS = list(map(int, admin_ids_str.split(','))) if admin_ids_str else []
+# Safely parse ADMIN_IDS
+ADMIN_IDS = []
+if admin_ids_str:
+    for admin_id in admin_ids_str.split(','):
+        admin_id = admin_id.strip()
+        if admin_id and admin_id.isdigit():
+            ADMIN_IDS.append(int(admin_id))
