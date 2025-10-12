@@ -3,20 +3,36 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-class Config:
-    TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '8452300221:AAHj8GaG_hE5OLaQslUl2I8b1rW8zCqYWG4')
-    ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
-    
-    CATEGORIES = [
-        '🍔 Food', '🏠 Housing', '🚗 Transportation', '🛒 Shopping',
-        '💊 Healthcare', '🎯 Entertainment', '📚 Education', '✈️ Travel',
-        '💡 Utilities', '💰 Savings', '📱 Technology', '🎁 Gifts',
-        '🏋️ Fitness', '🐾 Pets', '📊 Other'
-    ]
-    
-    BUDGET_RECOMMENDATIONS = {
-        '🍔 Food': 0.15, '🏠 Housing': 0.25, '🚗 Transportation': 0.15,
-        '🛒 Shopping': 0.10, '💊 Healthcare': 0.05, '🎯 Entertainment': 0.05,
-        '📚 Education': 0.05, '✈️ Travel': 0.05, '💡 Utilities': 0.08,
-        '💰 Savings': 0.12
-    }
+# Remove the Config class and use direct variables
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+
+# MongoDB Configuration
+MONGODB_URI = os.getenv('MONGODB_URI')
+DATABASE_NAME = "reminder_bot"
+
+# Tesseract OCR Configuration
+SUPPORTED_LANGUAGES = {
+    'english': 'eng',
+    # Comment out languages you don't have installed
+    # 'spanish': 'spa',
+    # 'french': 'fra',
+    # 'german': 'deu',
+    # 'italian': 'ita',
+    # 'portuguese': 'por',
+    # 'russian': 'rus',
+    # 'chinese': 'chi_sim',
+    # 'japanese': 'jpn',
+    # 'korean': 'kor',
+    # 'arabic': 'ara',
+    # 'hindi': 'hin'
+}
+
+# Text Formatting Options
+FORMAT_OPTIONS = ['plain', 'markdown', 'html']
+
+# Support Email
+SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'tolesadebushe9@gmail.com')
+
+# Admin User IDs (optional)
+admin_ids_str = os.getenv('ADMIN_IDS', '')
+ADMIN_IDS = list(map(int, admin_ids_str.split(','))) if admin_ids_str else []

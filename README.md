@@ -1,18 +1,28 @@
-# Expense Tracker Telegram Bot
+# Telegram Image-to-Text Converter Bot
 
-A comprehensive Telegram bot for tracking expenses, setting budgets, and getting personalized financial tips.
+A powerful Telegram bot that converts images to text using OCR technology with multi-language support and various text formatting options.
 
 ## Features
 
-- ✅ **Expense Tracking**: Log expenses with categories
-- ✅ **Monthly Reports**: Visual charts and breakdowns
-- ✅ **Budget Management**: Set and track category budgets
-- ✅ **Saving Tips**: AI-powered financial advice
-- ✅ **Statistics**: Spending insights and analytics
-- ✅ **Beautiful UI**: Interactive buttons and formatted messages
+- 📷 Image to text conversion using Tesseract OCR
+- 🌐 Multi-language support (English available, more can be added)
+- 📝 Multiple text formats: Plain Text, Markdown, HTML
+- 💾 User settings and statistics
+- 🎯 User-friendly menu interface
+- 📧 Direct support contact
 
-## Setup Instructions
+## Setup
 
-### 1. Environment Setup
+### Prerequisites
 
-Create a `.env` file with:
+- Python 3.8+
+- Tesseract OCR installed
+- Telegram Bot Token from [@BotFather](https://t.me/BotFather)
+- MongoDB Atlas account (optional)
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/telegram-ocr-bot.git
+cd telegram-ocr-bot
