@@ -47,7 +47,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Add database status to welcome message
     if db.is_mock:
-        welcome_text += "⚠️ *Note:* Using temporary storage (MongoDB not connected)\n\n"
+        welcome_text += "\n\n"
     else:
         welcome_text += "✅ *Database:* Connected and saving your preferences\n\n"
     
