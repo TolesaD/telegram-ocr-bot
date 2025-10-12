@@ -33,7 +33,7 @@ class OCRBot:
             logger.info("Setting up bot handlers...")
             
             # Import handlers
-            from handlers.start import start_command
+            from handlers.start import start_command, handle_membership_check, force_check_membership
             from handlers.help import help_command, handle_help_callback
             from handlers.ocr import handle_image, handle_reformat
             from handlers.menu import (
@@ -52,12 +52,16 @@ class OCRBot:
             self.application.add_handler(CommandHandler("help", help_command))
             self.application.add_handler(CommandHandler("settings", show_settings_menu))
             self.application.add_handler(CommandHandler("stats", show_statistics))
+            self.application.add_handler(CommandHandler("check", force_check_membership))
             
             # Message handlers
             self.application.add_handler(MessageHandler(filters.PHOTO, handle_image))
             
             # Callback query handlers - ORDER MATTERS!
             # Specific patterns first, then generic ones
+            
+            # Channel membership
+            self.application.add_handler(CallbackQueryHandler(handle_membership_check, pattern="^check_membership$"))
             
             # Main menu and navigation
             self.application.add_handler(CallbackQueryHandler(show_main_menu, pattern="^main_menu$"))
@@ -173,9 +177,8 @@ def main():
         # Initialize and run bot
         bot = OCRBot(BOT_TOKEN)
         
-        # Use webhook on PythonAnywhere, polling locally
-        # Force polling for now since webhooks need extra setup
-        use_webhook = False  # Change this later if you want webhooks
+        # FORCE POLLING MODE - webhooks don't work well on PythonAnywhere free tier
+        use_webhook = False
         
         if use_webhook:
             logger.info("Starting in webhook mode...")

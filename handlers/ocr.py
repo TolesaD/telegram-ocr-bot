@@ -1,33 +1,30 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
-import io
 import traceback
 from database.mongodb import db
 from utils.image_processing import ImageProcessor
 from utils.text_formatter import TextFormatter
-import config  # Import config directly
+import config
 import logging
+import asyncio
+import time
 
 logger = logging.getLogger(__name__)
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming images"""
+    """Handle incoming images with timeout protection"""
     user_id = update.effective_user.id
     message = update.message
     
-    # Check if message contains photo
     if not message.photo:
         await message.reply_text("❌ Please send an image containing text.")
         return
     
-    # Get user settings with error handling
+    # Get user settings
     try:
         user = db.get_user(user_id)
-        if user and 'settings' in user:
-            user_settings = user['settings']
-        else:
-            user_settings = {}
+        user_settings = user.get('settings', {}) if user else {}
     except Exception as e:
         logger.error(f"Error getting user settings: {e}")
         user_settings = {}
@@ -35,56 +32,70 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     language = user_settings.get('language', 'english')
     text_format = user_settings.get('text_format', 'plain')
     
-    # Get the highest quality photo
     photo = message.photo[-1]
-    
-    # Show processing message
-    processing_msg = await message.reply_text("🔄 Processing your image...")
+    processing_msg = await message.reply_text("🔄 Processing your image... This may take a moment.")
     
     try:
-        # Download image
+        # Download image with timeout
         photo_file = await photo.get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         
-        logger.info(f"📸 Image downloaded: {len(photo_bytes)} bytes")
+        logger.info(f"📸 Processing image for user {user_id}")
         
-        # Validate image size
-        if len(photo_bytes) > 10 * 1024 * 1024:  # 10MB limit
-            await processing_msg.edit_text("❌ Image is too large. Please send an image smaller than 10MB.")
+        # Validate size
+        if len(photo_bytes) > 5 * 1024 * 1024:  # Reduced to 5MB for faster processing
+            await processing_msg.edit_text("❌ Image is too large. Please send an image smaller than 5MB.")
             return
         
-        # Get language code - FIXED: Use config directly instead of config.Config
+        # Get language code
         lang_code = config.SUPPORTED_LANGUAGES.get(language, 'eng')
         
         # Update processing message
-        await processing_msg.edit_text(f"🔄 Processing image with {language} OCR...")
+        await processing_msg.edit_text(f"🔄 Processing image ({language})...")
         
-        # Extract text
-        extracted_text = ImageProcessor.extract_text(bytes(photo_bytes), lang_code)
+        # Extract text with timeout protection
+        try:
+            # Set a timeout for OCR processing (30 seconds)
+            extracted_text = await asyncio.wait_for(
+                ImageProcessor.extract_text_async(bytes(photo_bytes), lang_code),
+                timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            await processing_msg.edit_text(
+                "⏰ Processing took too long. The image might be too complex.\n\n"
+                "💡 Try:\n"
+                "• Cropping to just the text area\n"
+                "• Using a smaller image\n"
+                "• Ensuring text is clear and focused"
+            )
+            return
         
         if not extracted_text or "No readable text" in extracted_text:
             await processing_msg.edit_text(
                 "❌ No readable text found in the image.\n\n"
-                "💡 Tips for better results:\n"
-                "• Use good lighting\n"
+                "💡 *Tips for better results:*\n"
+                "• Use good, even lighting\n"
                 "• Ensure text is clear and not blurry\n"
                 "• Avoid shadows on the text\n"
                 "• Use high contrast (black text on white background)\n"
-                "• Take a straight, focused photo"
+                "• Take a straight, focused photo\n"
+                "• Try cropping to just the text area",
+                parse_mode='Markdown'
             )
             return
         
         # Format text
         formatted_text = TextFormatter.format_text(extracted_text, text_format)
         
-        # Log the request (with error handling)
+        # Log the request
         try:
             db.log_ocr_request({
                 'user_id': user_id,
                 'timestamp': datetime.now(),
                 'language': language,
                 'format': text_format,
-                'text_length': len(extracted_text)
+                'text_length': len(extracted_text),
+                'status': 'success'
             })
         except Exception as e:
             logger.error(f"Error logging OCR request: {e}")
@@ -97,11 +108,10 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             parse_mode = None
         
-        # Truncate very long text to avoid Telegram message limits
+        # Truncate if too long
         if len(formatted_text) > 4000:
             formatted_text = formatted_text[:4000] + "\n\n... (text truncated due to length)"
         
-        # Send extracted text
         response_text = f"📝 *Extracted Text* \\({text_format.upper()}\\):\n\n{formatted_text}"
         
         # Add format options keyboard
@@ -122,6 +132,11 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"✅ Successfully processed image for user {user_id}")
         
+    except asyncio.TimeoutError:
+        await processing_msg.edit_text(
+            "⏰ Processing timeout. The image might be too large or complex.\n\n"
+            "💡 Try sending a smaller image or cropping to just the text."
+        )
     except Exception as e:
         error_detail = str(e)
         logger.error(f"OCR Error: {error_detail}")
@@ -143,6 +158,15 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         elif "image file is truncated" in error_detail or "cannot identify image file" in error_detail:
             error_message = "❌ Invalid image format. Please send a valid JPEG, PNG, or WebP image."
+        elif "Timed out" in error_detail or "timeout" in error_detail.lower():
+            error_message = (
+                "⏰ Processing timeout.\n\n"
+                "💡 Try:\n"
+                "• Sending a smaller image\n"
+                "• Cropping to just the text\n"
+                "• Using better lighting\n"
+                "• Less complex images"
+            )
         else:
             error_message = f"❌ Error processing image: {error_detail}"
         
@@ -154,22 +178,18 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     data = query.data
-    format_type = data.split('_')[1]  # plain, markdown, or html
+    format_type = data.split('_')[1]
     original_message_id = int(data.split('_')[2])
     
-    # Get original message text
     original_text = query.message.text
     
-    # Remove the format prefix if present
     if "Extracted Text" in original_text:
         text_only = original_text.split("\n\n", 1)[1]
     else:
         text_only = original_text
     
-    # Reformat text
     formatted_text = TextFormatter.format_text(text_only, format_type)
     
-    # Prepare response
     if format_type == 'markdown':
         parse_mode = 'MarkdownV2'
     elif format_type == 'html':
@@ -179,7 +199,6 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     response_text = f"📝 *Extracted Text* \\({format_type.upper()}\\):\n\n{formatted_text}"
     
-    # Update message
     await query.edit_message_text(
         response_text,
         parse_mode=parse_mode if format_type != 'plain' else None
