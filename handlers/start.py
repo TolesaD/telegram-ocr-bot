@@ -37,41 +37,6 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
             return True
         
         return False
-
-        async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    """Check if user is a member of the announcement channel"""
-    try:
-        print(f"🔍 Checking membership for user {user_id} in channel {ANNOUNCEMENT_CHANNEL}")
-        
-        # Try to get chat member - this will raise an error if user is not a member
-        chat_member = await context.bot.get_chat_member(
-            chat_id=ANNOUNCEMENT_CHANNEL,
-            user_id=user_id
-        )
-        
-        print(f"📊 User status: {chat_member.status}")
-        
-        # Check if user status is not "left" (meaning they've joined)
-        if chat_member.status not in ['left', 'kicked', 'banned']:
-            print("✅ User is a channel member")
-            return True
-        else:
-            print("❌ User has not joined the channel")
-            return False
-        
-    except Exception as e:
-        print(f"🚨 Error checking channel membership: {e}")
-        # For debugging, let's see what happens with different approaches
-        
-        # Try alternative method - get chat first to see if bot has access
-        try:
-            chat = await context.bot.get_chat(ANNOUNCEMENT_CHANNEL)
-            print(f"📢 Bot can access chat: {chat.title}")
-            print("⚠️ But cannot check user membership - allowing access")
-            return True  # Allow access if bot can see the chat but not check members
-        except Exception as e2:
-            print(f"🚨 Bot cannot access chat at all: {e2}")
-            return False  # Require joining if bot can't even access the chat
         
     except Exception as e:
         print(f"Error checking channel membership: {e}")
