@@ -12,13 +12,21 @@ import time
 
 logger = logging.getLogger(__name__)
 
+# Processing cache to prevent multiple concurrent requests
+processing_cache = {}
+
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming images with timeout protection"""
+    """Handle incoming images with multi-language support"""
     user_id = update.effective_user.id
     message = update.message
     
     if not message.photo:
         await message.reply_text("❌ Please send an image containing text.")
+        return
+    
+    # Prevent multiple concurrent processing
+    if user_id in processing_cache:
+        await message.reply_text("⏳ Please wait for your current image to finish processing.")
         return
     
     # Get user settings
@@ -32,92 +40,94 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     language = user_settings.get('language', 'english')
     text_format = user_settings.get('text_format', 'plain')
     
+    # Get language code
+    lang_code = config.SUPPORTED_LANGUAGES.get(language, 'eng')
+    language_display = config.LANGUAGE_DISPLAY_NAMES.get(language, language)
+    
+    # Get the best quality photo
     photo = message.photo[-1]
-    processing_msg = await message.reply_text("🔄 Processing your image... This may take a moment.")
+    
+    # Mark as processing
+    processing_cache[user_id] = True
+    processing_msg = None
     
     try:
-        # Download image with timeout
+        processing_msg = await message.reply_text(f"🔄 Processing your image ({language_display})...")
+        start_time = time.time()
+        
+        # Download image
         photo_file = await photo.get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         
-        logger.info(f"📸 Processing image for user {user_id}")
-        
         # Validate size
-        if len(photo_bytes) > 5 * 1024 * 1024:  # Reduced to 5MB for faster processing
-            await processing_msg.edit_text("❌ Image is too large. Please send an image smaller than 5MB.")
+        if len(photo_bytes) > config.MAX_IMAGE_SIZE:
+            await processing_msg.edit_text("❌ Image is too large. Please send an image smaller than 8MB.")
             return
         
-        # Get language code
-        lang_code = config.SUPPORTED_LANGUAGES.get(language, 'eng')
+        # Update status
+        await processing_msg.edit_text(f"🔄 Processing image in {language_display}...")
         
-        # Update processing message
-        await processing_msg.edit_text(f"🔄 Processing image ({language})...")
-        
-        # Extract text with timeout protection
+        # Extract text with timeout
         try:
-            # Set a timeout for OCR processing (30 seconds)
             extracted_text = await asyncio.wait_for(
                 ImageProcessor.extract_text_async(bytes(photo_bytes), lang_code),
-                timeout=30.0
+                timeout=config.PROCESSING_TIMEOUT
             )
+            
+            processing_time = time.time() - start_time
+            logger.info(f"✅ Processed image for user {user_id} in {processing_time:.2f}s (Language: {language})")
+            
         except asyncio.TimeoutError:
             await processing_msg.edit_text(
-                "⏰ Processing took too long. The image might be too complex.\n\n"
-                "💡 Try:\n"
-                "• Cropping to just the text area\n"
-                "• Using a smaller image\n"
-                "• Ensuring text is clear and focused"
+                f"⏰ Processing took too long for {language_display}. Please try:\n"
+                "• A smaller image\n" 
+                "• Cropping to text area\n"
+                "• Better lighting\n"
+                "• Less complex background"
             )
             return
         
         if not extracted_text or "No readable text" in extracted_text:
             await processing_msg.edit_text(
-                "❌ No readable text found in the image.\n\n"
+                f"❌ No readable text found in {language_display}.\n\n"
                 "💡 *Tips for better results:*\n"
-                "• Use good, even lighting\n"
-                "• Ensure text is clear and not blurry\n"
-                "• Avoid shadows on the text\n"
-                "• Use high contrast (black text on white background)\n"
-                "• Take a straight, focused photo\n"
-                "• Try cropping to just the text area",
+                "• Use good lighting\n"
+                "• Ensure text is clear and focused\n"
+                "• Choose the right language in settings\n"
+                "• High contrast works best\n"
+                "• Take straight photos",
                 parse_mode='Markdown'
             )
             return
         
+        # Store the original extracted text in context for reformatting
+        context.user_data[f'original_text_{message.message_id}'] = extracted_text
+        
         # Format text
         formatted_text = TextFormatter.format_text(extracted_text, text_format)
         
-        # Log the request
+        # Log successful request
         try:
             db.log_ocr_request({
                 'user_id': user_id,
                 'timestamp': datetime.now(),
                 'language': language,
+                'language_display': language_display,
                 'format': text_format,
                 'text_length': len(extracted_text),
+                'processing_time': processing_time,
                 'status': 'success'
             })
         except Exception as e:
             logger.error(f"Error logging OCR request: {e}")
         
-        # Prepare response
-        if text_format == 'markdown':
-            parse_mode = 'MarkdownV2'
-        elif text_format == 'html':
-            parse_mode = 'HTML'
-        else:
-            parse_mode = None
+        # Prepare response - USE PLAIN TEXT FORMATTING FIRST
+        response_text = f"📝 Extracted Text ({language_display}, {text_format.upper()}):\n\n{formatted_text}"
         
-        # Truncate if too long
-        if len(formatted_text) > 4000:
-            formatted_text = formatted_text[:4000] + "\n\n... (text truncated due to length)"
-        
-        response_text = f"📝 *Extracted Text* \\({text_format.upper()}\\):\n\n{formatted_text}"
-        
-        # Add format options keyboard
+        # Add format options
         keyboard = [
             [
-                InlineKeyboardButton("📄 Plain Text", callback_data=f"reformat_plain_{message.message_id}"),
+                InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{message.message_id}"),
                 InlineKeyboardButton("📋 Markdown", callback_data=f"reformat_markdown_{message.message_id}"),
                 InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{message.message_id}")
             ]
@@ -127,79 +137,163 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await processing_msg.edit_text(
             response_text,
             reply_markup=reply_markup,
-            parse_mode=parse_mode if text_format != 'plain' else None
+            parse_mode=None  # Start with plain text to ensure it works
         )
         
-        logger.info(f"✅ Successfully processed image for user {user_id}")
+        logger.info(f"✅ Successfully processed image for user {user_id} in {language}")
         
     except asyncio.TimeoutError:
-        await processing_msg.edit_text(
-            "⏰ Processing timeout. The image might be too large or complex.\n\n"
-            "💡 Try sending a smaller image or cropping to just the text."
+        error_msg = (
+            f"⏰ Processing timeout for {language_display}. Please try:\n\n"
+            "• A smaller image\n"
+            "• Cropping to text area\n" 
+            "• Better lighting\n"
+            "• Clearer text\n"
+            "• Try a different language"
         )
-    except Exception as e:
-        error_detail = str(e)
-        logger.error(f"OCR Error: {error_detail}")
-        logger.error(f"Full traceback: {traceback.format_exc()}")
-        
-        # User-friendly error messages
-        if "Tesseract not configured" in error_detail:
-            error_message = "❌ OCR engine is not available. Please contact the administrator."
-        elif "Language" in error_detail and "not installed" in error_detail:
-            error_message = f"❌ {error_detail}. Please try English or change language in settings."
-        elif "No readable text" in error_detail:
-            error_message = (
-                "❌ No readable text found.\n\n"
-                "💡 Try:\n"
-                "• Better lighting\n"
-                "• Higher contrast\n"
-                "• Clearer text\n"
-                "• Less background noise"
-            )
-        elif "image file is truncated" in error_detail or "cannot identify image file" in error_detail:
-            error_message = "❌ Invalid image format. Please send a valid JPEG, PNG, or WebP image."
-        elif "Timed out" in error_detail or "timeout" in error_detail.lower():
-            error_message = (
-                "⏰ Processing timeout.\n\n"
-                "💡 Try:\n"
-                "• Sending a smaller image\n"
-                "• Cropping to just the text\n"
-                "• Using better lighting\n"
-                "• Less complex images"
-            )
+        if processing_msg:
+            await processing_msg.edit_text(error_msg)
         else:
-            error_message = f"❌ Error processing image: {error_detail}"
+            await message.reply_text(error_msg)
+            
+    except Exception as e:
+        error_msg = await handle_ocr_error(e, language_display)
+        if processing_msg:
+            await processing_msg.edit_text(error_msg)
+        else:
+            await message.reply_text(error_msg)
         
-        await processing_msg.edit_text(error_message)
+        # Log error
+        try:
+            db.log_ocr_request({
+                'user_id': user_id,
+                'timestamp': datetime.now(),
+                'language': language,
+                'language_display': language_display,
+                'format': text_format,
+                'status': 'error',
+                'error': str(e)
+            })
+        except Exception as log_error:
+            logger.error(f"Error logging OCR error: {log_error}")
+    
+    finally:
+        # Remove from processing cache
+        processing_cache.pop(user_id, None)
+
+async def handle_ocr_error(error, language_display):
+    """Handle OCR errors with user-friendly messages"""
+    error_str = str(error)
+    logger.error(f"OCR Error for {language_display}: {error_str}")
+    
+    if "timeout" in error_str.lower():
+        return (
+            f"⏰ Processing timeout for {language_display}. Please try:\n\n"
+            "• Smaller image (under 5MB)\n"
+            "• Better lighting and focus\n"
+            "• High contrast text\n"
+            "• Crop to text area\n"
+            "• Try a different language"
+        )
+    elif "no readable text" in error_str.lower():
+        return (
+            f"❌ No readable text found in {language_display}.\n\n"
+            "💡 *Tips:*\n"
+            "• Use good, even lighting\n"
+            "• Ensure text is clear and not blurry\n"
+            "• Choose the correct language\n"
+            "• Use high contrast\n"
+            "• Take straight, focused photos"
+        )
+    elif "language" in error_str.lower() and "not installed" in error_str.lower():
+        return f"❌ {language_display} language pack not installed. Please try English or another supported language."
+    elif "tesseract" in error_str.lower() and "not configured" in error_str.lower():
+        return "❌ OCR engine is not available. Please contact administrator."
+    else:
+        return f"❌ Error processing image in {language_display}: {error_str}"
 
 async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text reformatting"""
+    """Handle text reformatting - ULTRA SIMPLE VERSION"""
     query = update.callback_query
     await query.answer()
     
-    data = query.data
-    format_type = data.split('_')[1]
-    original_message_id = int(data.split('_')[2])
-    
-    original_text = query.message.text
-    
-    if "Extracted Text" in original_text:
-        text_only = original_text.split("\n\n", 1)[1]
-    else:
-        text_only = original_text
-    
-    formatted_text = TextFormatter.format_text(text_only, format_type)
-    
-    if format_type == 'markdown':
-        parse_mode = 'MarkdownV2'
-    elif format_type == 'html':
-        parse_mode = 'HTML'
-    else:
+    try:
+        data = query.data
+        parts = data.split('_')
+        format_type = parts[1]
+        original_message_id = int(parts[2])
+        
+        logger.info(f"🔄 Reformatting to {format_type} for message {original_message_id}")
+        
+        # Get the original text from context
+        original_text_key = f'original_text_{original_message_id}'
+        
+        if original_text_key not in context.user_data:
+            await query.edit_message_text("❌ Original text not found. Please process the image again.")
+            return
+        
+        original_text = context.user_data[original_text_key]
+        
+        if not original_text or len(original_text.strip()) < 2:
+            await query.edit_message_text("❌ No text available to reformat.")
+            return
+        
+        # Reformat text - use the simple formatter
+        formatted_text = TextFormatter.format_text(original_text, format_type)
+        
+        # Prepare response - ALWAYS use plain text first
+        response_text = f"📝 Extracted Text ({format_type.upper()}):\n\n{formatted_text}"
+        
+        # Only set parse_mode for formats that support it
         parse_mode = None
-    
-    response_text = f"📝 *Extracted Text* \\({format_type.upper()}\\):\n\n{formatted_text}"
-    
-    await query.edit_message_text(
-        response_text,
-        parse_mode=parse_mode if format_type != 'plain' else None
-    )
+        if format_type == 'markdown':
+            # Try to use Markdown, but if it fails, fallback to plain
+            try:
+                # Test if the text can be parsed as Markdown
+                test_text = TextFormatter.format_markdown_simple("test")
+                if test_text:
+                    parse_mode = 'MarkdownV2'
+            except:
+                parse_mode = None
+        elif format_type == 'html':
+            parse_mode = 'HTML'
+        
+        # Create new keyboard
+        keyboard = [
+            [
+                InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{original_message_id}"),
+                InlineKeyboardButton("📋 Markdown", callback_data=f"reformat_markdown_{original_message_id}"),
+                InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{original_message_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Try to send with formatting, fallback to plain text if it fails
+        try:
+            await query.edit_message_text(
+                response_text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+            logger.info(f"✅ Successfully reformatted to {format_type}")
+        except Exception as format_error:
+            logger.warning(f"Formatting failed, using plain text: {format_error}")
+            await query.edit_message_text(
+                f"📝 Extracted Text ({format_type.upper()} - showing as plain text):\n\n{original_text}",
+                reply_markup=reply_markup,
+                parse_mode=None
+            )
+        
+    except Exception as e:
+        logger.error(f"❌ Error in reformat: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Ultimate fallback
+        try:
+            original_text = context.user_data.get(f'original_text_{original_message_id}', 'No text available')
+            await query.edit_message_text(
+                f"❌ Error reformatting text. Showing in plain format:\n\n{original_text}",
+                parse_mode=None
+            )
+        except:
+            await query.edit_message_text("❌ Error reformatting text. Please process the image again.")

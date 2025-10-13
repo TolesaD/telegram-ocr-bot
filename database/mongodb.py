@@ -1,10 +1,10 @@
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure
-import ssl
-import certifi
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from datetime import datetime
+import logging
 import config
-import urllib.parse
+
+logger = logging.getLogger(__name__)
 
 class MongoDB:
     def __init__(self):
@@ -14,92 +14,130 @@ class MongoDB:
         self.connect()
     
     def connect(self):
-        """Try multiple connection strategies"""
-        # Check if MongoDB URI is available
+        """Connect to MongoDB with production settings"""
         if not config.MONGODB_URI:
-            print("❌ MongoDB URI not found in environment variables")
+            logger.warning("MongoDB URI not configured, using mock database")
             self.setup_mock_database()
             return
         
-        connection_methods = [
-            self._connect_simplified_ssl,
-            self._connect_without_ssl_verification,
-            self._connect_with_certifi,
-        ]
-        
-        for method in connection_methods:
-            try:
-                if method():
-                    print("✅ MongoDB connected successfully!")
-                    self.is_mock = False
-                    return
-            except Exception as e:
-                print(f"❌ Connection method failed: {method.__name__}: {e}")
-        
-        # If all methods fail, setup mock database
-        print("🔴 All MongoDB connection attempts failed. Using mock database.")
-        self.setup_mock_database()
+        try:
+            self.client = MongoClient(
+                config.MONGODB_URI,
+                serverSelectionTimeoutMS=10000,
+                connectTimeoutMS=10000,
+                socketTimeoutMS=30000,
+                maxPoolSize=50,
+                retryWrites=True,
+                retryReads=True
+            )
+            
+            # Test connection
+            self.client.admin.command('ping')
+            self.db = self.client[config.DATABASE_NAME]
+            
+            logger.info("✅ MongoDB connected successfully")
+            self.is_mock = False
+            
+            # Create indexes for better performance
+            self._create_indexes()
+            
+        except Exception as e:
+            logger.error(f"❌ MongoDB connection failed: {e}")
+            self.setup_mock_database()
     
-    def _connect_simplified_ssl(self):
-        """Method 1: Simplified SSL connection"""
-        print("🔄 Attempting simplified SSL connection...")
-        self.client = MongoClient(
-            config.MONGODB_URI,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=10000,
-            socketTimeoutMS=10000
-        )
-        self.db = self.client[config.DATABASE_NAME]
-        # Test connection
-        self.client.admin.command('ping')
-        return True
+    def _create_indexes(self):
+        """Create database indexes for better performance"""
+        try:
+            # Index for user queries
+            self.db.users.create_index("user_id", unique=True)
+            self.db.users.create_index("created_at")
+            
+            # Index for OCR request queries
+            self.db.requests.create_index("user_id")
+            self.db.requests.create_index("timestamp")
+            self.db.requests.create_index([("user_id", 1), ("timestamp", -1)])
+            
+            logger.info("✅ Database indexes created")
+        except Exception as e:
+            logger.error(f"Error creating indexes: {e}")
     
-    def _connect_without_ssl_verification(self):
-        """Method 2: Connection without SSL verification"""
-        print("🔄 Attempting connection without SSL verification...")
-        self.client = MongoClient(
-            config.MONGODB_URI,
-            tls=True,
-            tlsAllowInvalidCertificates=True,  # Use only this option, not tlsInsecure
-            retryWrites=True,
-            w='majority',
-            socketTimeoutMS=20000,
-            connectTimeoutMS=20000,
-            serverSelectionTimeoutMS=20000
-        )
-        self.db = self.client[config.DATABASE_NAME]
-        self.client.admin.command('ping')
-        return True
+    def insert_user(self, user_data):
+        """Insert or update user data"""
+        try:
+            result = self.db.users.update_one(
+                {'user_id': user_data['user_id']},
+                {'$set': user_data},
+                upsert=True
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Error inserting user: {e}")
+            return None
     
-    def _connect_with_certifi(self):
-        """Method 3: Standard connection with certifi"""
-        print("🔄 Attempting connection with certifi SSL...")
-        self.client = MongoClient(
-            config.MONGODB_URI,
-            tls=True,
-            tlsCAFile=certifi.where(),
-            retryWrites=True,
-            w='majority',
-            socketTimeoutMS=20000,
-            connectTimeoutMS=20000,
-            serverSelectionTimeoutMS=20000
-        )
-        self.db = self.client[config.DATABASE_NAME]
-        self.client.admin.command('ping')
-        return True
+    def get_user(self, user_id):
+        """Get user by ID"""
+        try:
+            return self.db.users.find_one({'user_id': user_id})
+        except Exception as e:
+            logger.error(f"Error getting user: {e}")
+            return None
+    
+    def update_user_settings(self, user_id, settings):
+        """Update user settings"""
+        try:
+            settings['updated_at'] = datetime.now()
+            return self.db.users.update_one(
+                {'user_id': user_id},
+                {'$set': {'settings': settings}}
+            )
+        except Exception as e:
+            logger.error(f"Error updating user settings: {e}")
+            return None
+    
+    def update_user_channel_status(self, user_id, status_data):
+        """Update user's channel status"""
+        try:
+            return self.db.users.update_one(
+                {'user_id': user_id},
+                {'$set': status_data}
+            )
+        except Exception as e:
+            logger.error(f"Error updating channel status: {e}")
+            return None
+    
+    def log_ocr_request(self, request_data):
+        """Log OCR request"""
+        try:
+            return self.db.requests.insert_one(request_data)
+        except Exception as e:
+            logger.error(f"Error logging OCR request: {e}")
+            return None
+    
+    def get_user_stats(self, user_id):
+        """Get user statistics"""
+        try:
+            total_requests = self.db.requests.count_documents({'user_id': user_id})
+            recent_requests = list(self.db.requests.find(
+                {'user_id': user_id}
+            ).sort('timestamp', -1).limit(5))
+            
+            return {
+                'total_requests': total_requests,
+                'recent_requests': recent_requests
+            }
+        except Exception as e:
+            logger.error(f"Error getting user stats: {e}")
+            return {'total_requests': 0, 'recent_requests': []}
 
-    # ... keep all the other methods the same (setup_mock_database, insert_user, etc.)
-
+    # Mock database methods (keep your existing mock implementation)
     def setup_mock_database(self):
-        """Setup a complete mock database for testing"""
-        print("🔄 Setting up mock database for testing...")
+        """Setup mock database - keep your existing implementation"""
+        logger.info("Setting up mock database...")
         self.is_mock = True
-        
-        # Create mock collections
         self.db = type('MockDB', (), {})()
         self.db.users = MockUsersCollection()
         self.db.requests = MockRequestsCollection()
-        print("✅ Mock database setup complete!")
+        logger.info("✅ Mock database setup complete")
 
     def insert_user(self, user_data):
         """Insert or update user data"""

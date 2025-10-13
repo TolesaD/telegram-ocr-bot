@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class OCRBot:
     def __init__(self, token):
         self.application = Application.builder().token(token).build()
-        self.setup_handlers()
+        self.setup_handlers()  # This should be called here
     
     def setup_handlers(self):
         """Setup all bot handlers with proper error handling"""
@@ -44,7 +44,8 @@ class OCRBot:
                 show_language_menu,
                 show_format_menu,
                 handle_language_change,
-                handle_format_change
+                handle_format_change,
+                show_language_group  # NEW - Make sure this is imported
             )
             
             # Command handlers
@@ -58,7 +59,6 @@ class OCRBot:
             self.application.add_handler(MessageHandler(filters.PHOTO, handle_image))
             
             # Callback query handlers - ORDER MATTERS!
-            # Specific patterns first, then generic ones
             
             # Channel membership
             self.application.add_handler(CallbackQueryHandler(handle_membership_check, pattern="^check_membership$"))
@@ -70,8 +70,9 @@ class OCRBot:
             self.application.add_handler(CallbackQueryHandler(handle_help_callback, pattern="^help$"))
             self.application.add_handler(CallbackQueryHandler(handle_convert_image, pattern="^convert_image$"))
             
-            # Settings sub-menus
+            # Settings sub-menus - LANGUAGE GROUPS ADDED
             self.application.add_handler(CallbackQueryHandler(show_language_menu, pattern="^change_language$"))
+            self.application.add_handler(CallbackQueryHandler(show_language_group, pattern="^language_group_"))  # NEW
             self.application.add_handler(CallbackQueryHandler(show_format_menu, pattern="^change_format$"))
             self.application.add_handler(CallbackQueryHandler(handle_language_change, pattern="^set_language_"))
             self.application.add_handler(CallbackQueryHandler(handle_format_change, pattern="^set_format_"))
