@@ -14,19 +14,19 @@ class ImageProcessor:
     
     @staticmethod
     def setup_tesseract_path():
-        """Set Tesseract path for PythonAnywhere"""
-        # PythonAnywhere has Tesseract pre-installed here
-        pythonanywhere_paths = [
+        """Set Tesseract path for Railway (Linux)"""
+        # Railway uses standard Linux paths
+        possible_paths = [
             '/usr/bin/tesseract',
         ]
         
-        for path in pythonanywhere_paths:
+        for path in possible_paths:
             if os.path.exists(path):
                 pytesseract.pytesseract.tesseract_cmd = path
                 logger.info(f"✅ Tesseract path set to: {path}")
                 return True
         
-        # Fallback: try to find in PATH
+        # Fallback: try system PATH
         try:
             pytesseract.get_tesseract_version()
             logger.info("✅ Tesseract found in system PATH")
@@ -37,18 +37,23 @@ class ImageProcessor:
     
     @staticmethod
     def get_available_languages():
-        """Get languages available on PythonAnywhere"""
+        """Get all available languages on Railway"""
         try:
-            # These are typically available on PythonAnywhere
-            common_languages = ['eng', 'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'nld', 'tur']
+            # Since we installed tesseract-ocr-all, we should have all languages
+            # Let's test the most common ones
+            common_languages = [
+                'eng', 'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'nld', 'tur',
+                'ara', 'heb', 'fas', 'chi_sim', 'jpn', 'kor', 'tha', 'vie',
+                'amh', 'afr', 'swa', 'yor', 'hau', 'ibo', 'som', 'zul', 'xho',
+                'hin', 'ben', 'tam', 'tel', 'mar', 'urd', 'guj', 'pan'
+            ]
             
-            # Test each language to see if it's actually available
             available = []
             for lang in common_languages:
                 if ImageProcessor.check_language_available(lang):
                     available.append(lang)
             
-            logger.info(f"📋 Available languages: {available}")
+            logger.info(f"📋 Available languages: {len(available)}")
             return available
             
         except Exception as e:
@@ -57,7 +62,7 @@ class ImageProcessor:
     
     @staticmethod
     def check_language_available(language_code):
-        """Check if a language is available by testing it"""
+        """Check if a language is available"""
         try:
             if not ImageProcessor.setup_tesseract_path():
                 return False
@@ -68,7 +73,7 @@ class ImageProcessor:
             d = ImageDraw.Draw(img)
             d.text((10, 10), "test", fill='black')
             
-            # Try to use the language with a short timeout
+            # Try to use the language
             try:
                 pytesseract.image_to_string(img, lang=language_code, timeout=2)
                 return True
@@ -138,10 +143,7 @@ class ImageProcessor:
             
             # Check if language is available
             if not ImageProcessor.check_language_available(language):
-                # Fallback to English if requested language isn't available
-                if language != 'eng':
-                    logger.warning(f"Language {language} not available, falling back to English")
-                    language = 'eng'
+                raise Exception(f"Language '{language}' is not available. Please try another language.")
             
             # Preprocess image
             processed_image = ImageProcessor.fast_preprocess_image(image_bytes)
@@ -187,13 +189,15 @@ class ImageProcessor:
         return '\n'.join(cleaned_lines)
 
 # Initialize on import
-print("🔍 Initializing Tesseract on PythonAnywhere...")
+print("🔍 Initializing Tesseract on Railway...")
 if ImageProcessor.setup_tesseract_path():
     try:
         version = pytesseract.get_tesseract_version()
         print(f"✅ Tesseract OCR v{version} is ready!")
         available_langs = ImageProcessor.get_available_languages()
-        print(f"📍 Available languages: {available_langs}")
+        print(f"📍 Available languages: {len(available_langs)}")
+        # Show first 10 languages as sample
+        print(f"📍 Sample: {available_langs[:10]}...")
     except Exception as e:
         print(f"❌ Tesseract initialization failed: {e}")
 else:
