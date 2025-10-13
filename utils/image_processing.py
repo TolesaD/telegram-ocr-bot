@@ -14,48 +14,65 @@ class ImageProcessor:
     
     @staticmethod
     def setup_tesseract_path():
-        """Set Tesseract path - optimized for Windows"""
-        possible_paths = [
-            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-            '/usr/bin/tesseract',  # Linux
-            '/usr/local/bin/tesseract',
+        """Set Tesseract path for PythonAnywhere"""
+        # PythonAnywhere has Tesseract pre-installed here
+        pythonanywhere_paths = [
+            '/usr/bin/tesseract',
         ]
         
-        for path in possible_paths:
+        for path in pythonanywhere_paths:
             if os.path.exists(path):
                 pytesseract.pytesseract.tesseract_cmd = path
-                logger.info(f"✅ Tesseract path: {path}")
+                logger.info(f"✅ Tesseract path set to: {path}")
                 return True
         
-        # Try system PATH
+        # Fallback: try to find in PATH
         try:
             pytesseract.get_tesseract_version()
-            logger.info("✅ Tesseract found in PATH")
+            logger.info("✅ Tesseract found in system PATH")
             return True
         except:
             logger.error("❌ Tesseract not found")
             return False
     
     @staticmethod
+    def get_available_languages():
+        """Get languages available on PythonAnywhere"""
+        try:
+            # These are typically available on PythonAnywhere
+            common_languages = ['eng', 'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'nld', 'tur']
+            
+            # Test each language to see if it's actually available
+            available = []
+            for lang in common_languages:
+                if ImageProcessor.check_language_available(lang):
+                    available.append(lang)
+            
+            logger.info(f"📋 Available languages: {available}")
+            return available
+            
+        except Exception as e:
+            logger.error(f"Error getting available languages: {e}")
+            return ['eng']  # Fallback to English
+    
+    @staticmethod
     def check_language_available(language_code):
-        """Check if a language is available in Tesseract"""
+        """Check if a language is available by testing it"""
         try:
             if not ImageProcessor.setup_tesseract_path():
                 return False
             
-            # Get Tesseract data path
-            tesseract_cmd = pytesseract.pytesseract.tesseract_cmd
-            tesseract_dir = os.path.dirname(tesseract_cmd)
-            tessdata_dir = os.path.join(tesseract_dir, 'tessdata')
+            # Create a simple test image
+            from PIL import Image, ImageDraw
+            img = Image.new('RGB', (100, 30), color='white')
+            d = ImageDraw.Draw(img)
+            d.text((10, 10), "test", fill='black')
             
-            # Check if language file exists
-            lang_file = os.path.join(tessdata_dir, f'{language_code}.traineddata')
-            if os.path.exists(lang_file):
-                logger.info(f"✅ Language {language_code} is available")
+            # Try to use the language with a short timeout
+            try:
+                pytesseract.image_to_string(img, lang=language_code, timeout=2)
                 return True
-            else:
-                logger.warning(f"❌ Language {language_code} not found at {lang_file}")
+            except:
                 return False
                 
         except Exception as e:
@@ -64,14 +81,14 @@ class ImageProcessor:
     
     @staticmethod
     def fast_preprocess_image(image_bytes):
-        """FAST image preprocessing without OpenCV dependencies"""
+        """FAST image preprocessing"""
         try:
             start_time = time.time()
             
             image = Image.open(io.BytesIO(image_bytes))
             original_size = image.size
             
-            # FAST Resize - larger images slow down OCR significantly
+            # Resize large images
             max_dimension = 1600
             if max(original_size) > max_dimension:
                 ratio = max_dimension / max(original_size)
@@ -79,11 +96,11 @@ class ImageProcessor:
                 image = image.resize(new_size, Image.Resampling.LANCZOS)
                 logger.info(f"📐 Resized: {original_size} → {new_size}")
             
-            # Convert to grayscale (faster processing)
+            # Convert to grayscale
             if image.mode != 'L':
                 image = image.convert('L')
             
-            # FAST contrast enhancement
+            # Enhance contrast
             enhancer = ImageEnhance.Contrast(image)
             image = enhancer.enhance(1.3)
             
@@ -96,12 +113,12 @@ class ImageProcessor:
             return image
             
         except Exception as e:
-            logger.error(f"Preprocessing error, using original: {e}")
+            logger.error(f"Preprocessing error: {e}")
             return Image.open(io.BytesIO(image_bytes))
     
     @staticmethod
     async def extract_text_async(image_bytes, language='eng'):
-        """Async text extraction with better error handling"""
+        """Async text extraction"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, 
@@ -112,7 +129,7 @@ class ImageProcessor:
     
     @staticmethod
     def extract_text_safe(image_bytes, language='eng'):
-        """Safe text extraction with language availability check"""
+        """Safe text extraction"""
         try:
             start_time = time.time()
             
@@ -121,15 +138,18 @@ class ImageProcessor:
             
             # Check if language is available
             if not ImageProcessor.check_language_available(language):
-                raise Exception(f"Language '{language}' is not installed. Please install the language pack or try a different language.")
+                # Fallback to English if requested language isn't available
+                if language != 'eng':
+                    logger.warning(f"Language {language} not available, falling back to English")
+                    language = 'eng'
             
             # Preprocess image
             processed_image = ImageProcessor.fast_preprocess_image(image_bytes)
             
-            # OPTIMIZED Tesseract configuration for SPEED
-            custom_config = r'--oem 1 --psm 6 -c preserve_interword_spaces=1 tessedit_do_invert=0'
+            # Tesseract configuration
+            custom_config = r'--oem 1 --psm 6 -c preserve_interword_spaces=1'
             
-            # Extract text with optimized settings
+            # Extract text
             text = pytesseract.image_to_string(
                 processed_image, 
                 lang=language, 
@@ -137,28 +157,22 @@ class ImageProcessor:
             )
             
             total_time = time.time() - start_time
-            logger.info(f"✅ OCR completed in {total_time:.2f}s")
+            logger.info(f"✅ OCR completed in {total_time:.2f}s (Language: {language})")
             
             cleaned_text = ImageProcessor.clean_extracted_text(text)
             
             if not cleaned_text:
-                return "No readable text found. Try: better lighting, clearer text, higher contrast."
+                return "No readable text found. Please try a clearer image."
             
             return cleaned_text
             
         except Exception as e:
             logger.error(f"OCR processing failed: {e}")
-            # Provide more helpful error messages
-            if "language" in str(e).lower() and "not installed" in str(e).lower():
-                raise Exception(f"Language '{language}' is not installed. Please try English or install the language pack.")
-            elif "tesseract" in str(e).lower():
-                raise Exception(f"Tesseract error: {str(e)}")
-            else:
-                raise Exception(f"OCR processing failed: {str(e)}")
+            raise Exception(f"OCR Error: {str(e)}")
     
     @staticmethod
     def clean_extracted_text(text):
-        """Fast text cleaning"""
+        """Clean extracted text"""
         if not text:
             return ""
         
@@ -167,29 +181,20 @@ class ImageProcessor:
         
         for line in lines:
             stripped_line = line.strip()
-            # Only keep lines with meaningful content
             if len(stripped_line) > 1 and any(c.isalnum() for c in stripped_line):
                 cleaned_lines.append(stripped_line)
         
         return '\n'.join(cleaned_lines)
 
-# Test on import
-print("🔍 Checking Tesseract installation...")
+# Initialize on import
+print("🔍 Initializing Tesseract on PythonAnywhere...")
 if ImageProcessor.setup_tesseract_path():
     try:
         version = pytesseract.get_tesseract_version()
         print(f"✅ Tesseract OCR v{version} is ready!")
-        
-        # Test available languages
-        print("🔍 Checking available languages...")
-        available_langs = ['eng', 'spa', 'fra', 'deu', 'ita', 'por']  # Basic languages
-        for lang in available_langs:
-            if ImageProcessor.check_language_available(lang):
-                print(f"   ✅ {lang} available")
-            else:
-                print(f"   ❌ {lang} not available")
-                
+        available_langs = ImageProcessor.get_available_languages()
+        print(f"📍 Available languages: {available_langs}")
     except Exception as e:
-        print(f"❌ Tesseract found but not working: {e}")
+        print(f"❌ Tesseract initialization failed: {e}")
 else:
-    print("❌ Tesseract OCR configuration failed")
+    print("❌ Tesseract not found")

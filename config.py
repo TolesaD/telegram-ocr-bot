@@ -10,60 +10,24 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 MONGODB_URI = os.getenv('MONGODB_URI')
 DATABASE_NAME = "ocr_bot"
 
-# Enhanced Tesseract OCR Configuration with Multiple Languages including African
+# Languages available on PythonAnywhere
 SUPPORTED_LANGUAGES = {
-    # European Languages
     'english': 'eng',
-    'spanish': 'spa',
+    'spanish': 'spa', 
     'french': 'fra',
     'german': 'deu',
     'italian': 'ita',
     'portuguese': 'por',
     'russian': 'rus',
     'dutch': 'nld',
-    'swedish': 'swe',
-    'polish': 'pol',
-    'ukrainian': 'ukr',
-    'greek': 'ell',
-    
-    # Asian Languages
-    'chinese_simplified': 'chi_sim',
-    'japanese': 'jpn',
-    'korean': 'kor',
-    'thai': 'tha',
-    'vietnamese': 'vie',
-    
-    # Middle Eastern Languages
-    'arabic': 'ara',
-    'hebrew': 'heb',
     'turkish': 'tur',
-    'persian': 'fas',
-    
-    # African Languages
-    'amharic': 'amh',
-    'afrikaans': 'afr',
-    'swahili': 'swa',
-    'yoruba': 'yor',
-    'hausa': 'hau',
-    'igbo': 'ibo',
-    'somali': 'som',
-    'zulu': 'zul',
-    'xhosa': 'xho',
-    
-    # Indian Languages
-    'hindi': 'hin',
-    'bengali': 'ben',
-    'tamil': 'tam',
-    'telugu': 'tel',
-    'marathi': 'mar',
-    'urdu': 'urd',
-    'gujarati': 'guj',
-    'punjabi': 'pan'
+    # African languages are typically NOT available on PythonAnywhere free tier
+    # 'amharic': 'amh',
+    # 'afrikaans': 'afr', 
+    # 'swahili': 'swa',
 }
 
-# Language display names for the menu
 LANGUAGE_DISPLAY_NAMES = {
-    # European
     'english': 'English 🇺🇸',
     'spanish': 'Spanish 🇪🇸', 
     'french': 'French 🇫🇷',
@@ -72,55 +36,17 @@ LANGUAGE_DISPLAY_NAMES = {
     'portuguese': 'Portuguese 🇵🇹',
     'russian': 'Russian 🇷🇺',
     'dutch': 'Dutch 🇳🇱',
-    'swedish': 'Swedish 🇸🇪',
-    'polish': 'Polish 🇵🇱',
-    'ukrainian': 'Ukrainian 🇺🇦',
-    'greek': 'Greek 🇬🇷',
-    
-    # Asian
-    'chinese_simplified': 'Chinese Simplified 🇨🇳',
-    'japanese': 'Japanese 🇯🇵',
-    'korean': 'Korean 🇰🇷',
-    'thai': 'Thai 🇹🇭',
-    'vietnamese': 'Vietnamese 🇻🇳',
-    
-    # Middle Eastern
-    'arabic': 'Arabic 🇸🇦',
-    'hebrew': 'Hebrew 🇮🇱',
     'turkish': 'Turkish 🇹🇷',
-    'persian': 'Persian 🇮🇷',
-    
-    # African Languages
-    'amharic': 'Amharic 🇪🇹',
-    'afrikaans': 'Afrikaans 🇿🇦',
-    'swahili': 'Swahili 🇰🇪',
-    'yoruba': 'Yoruba 🇳🇬',
-    'hausa': 'Hausa 🇳🇬',
-    'igbo': 'Igbo 🇳🇬',
-    'somali': 'Somali 🇸🇴',
-    'zulu': 'Zulu 🇿🇦',
-    'xhosa': 'Xhosa 🇿🇦',
-    
-    # Indian
-    'hindi': 'Hindi 🇮🇳',
-    'bengali': 'Bengali 🇧🇩',
-    'tamil': 'Tamil 🇮🇳',
-    'telugu': 'Telugu 🇮🇳',
-    'marathi': 'Marathi 🇮🇳',
-    'urdu': 'Urdu 🇵🇰',
-    'gujarati': 'Gujarati 🇮🇳',
-    'punjabi': 'Punjabi 🇮🇳'
 }
 
-# Language groups for better menu organization
+# Language groups - only include available languages
 LANGUAGE_GROUPS = {
-    'european': ['english', 'spanish', 'french', 'german', 'italian', 'portuguese', 'russian', 'dutch', 'swedish', 'polish', 'ukrainian', 'greek'],
-    'asian': ['chinese_simplified', 'japanese', 'korean', 'thai', 'vietnamese'],
-    'middle_eastern': ['arabic', 'hebrew', 'turkish', 'persian'],
-    'african': ['amharic', 'afrikaans', 'swahili', 'yoruba', 'hausa', 'igbo', 'somali', 'zulu', 'xhosa'],  # NEW GROUP
-    'indian': ['hindi', 'bengali', 'tamil', 'telugu', 'marathi', 'urdu', 'gujarati', 'punjabi'],
-    'other': []  # Empty for now
+    'european': ['english', 'spanish', 'french', 'german', 'italian', 'portuguese', 'russian', 'dutch'],
+    'other': ['turkish'],
 }
+
+# Remove empty groups
+LANGUAGE_GROUPS = {k: v for k, v in LANGUAGE_GROUPS.items() if v}
 
 # Performance Settings
 MAX_IMAGE_SIZE = 8 * 1024 * 1024
