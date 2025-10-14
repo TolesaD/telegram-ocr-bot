@@ -1,7 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime, timedelta
-from database.mongodb import db
 from handlers.menu import show_main_menu
 import config
 import logging
@@ -14,6 +13,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"🚀 /start from user {user.id} (@{user.username})")
     
+    # Get database from bot_data
+    db = context.bot_data.get('db')
+    
     # Check channel membership
     has_joined = await check_channel_membership(update, context, user.id)
     
@@ -24,7 +26,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # User has joined, proceed
     logger.info(f"✅ User {user.id} verified, proceeding")
-    await process_user_start(update, context, user)
+    await process_user_start(update, context, user, db)
 
 async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
     """Check if user is a member of the announcement channel"""
@@ -101,13 +103,16 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"🔄 User {user.id} checking membership...")
     
+    # Get database from bot_data
+    db = context.bot_data.get('db')
+    
     # Check membership again
     has_joined = await check_channel_membership(update, context, user.id)
     
     if has_joined:
         logger.info(f"🎉 User {user.id} verified successfully")
         await query.edit_message_text("✅ Thank you for joining! Setting up your account...")
-        await process_user_start(update, context, user, from_callback=True)
+        await process_user_start(update, context, user, db, from_callback=True)
     else:
         logger.warning(f"❌ User {user.id} not verified")
         await query.answer(
@@ -120,7 +125,7 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
             show_alert=True
         )
 
-async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE, user, from_callback=False):
+async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE, user, db=None, from_callback=False):
     """Process user start after verification"""
     try:
         user_data = {
@@ -139,16 +144,20 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
             }
         }
         
-        # Save user to database
-        result = db.insert_user(user_data)
-        
-        if result:
-            logger.info(f"✅ User {user.id} saved to database")
-        else:
-            logger.warning(f"⚠️ User {user.id} using mock storage")
+        # Save user to database if available
+        if db:
+            try:
+                result = db.insert_user(user_data)
+                
+                if result:
+                    logger.info(f"✅ User {user.id} saved to database")
+                else:
+                    logger.warning(f"⚠️ User {user.id} storage failed")
+            except Exception as e:
+                logger.error(f"❌ Error saving user {user.id}: {e}")
         
     except Exception as e:
-        logger.error(f"❌ Error saving user {user.id}: {e}")
+        logger.error(f"❌ Error processing user {user.id}: {e}")
     
     welcome_text = (
         f"🎉 *Welcome {user.first_name}!*\n\n"
@@ -170,7 +179,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     )
     
     # Add storage info
-    if db.is_mock:
+    if db and hasattr(db, 'is_mock') and db.is_mock:
         welcome_text += "💾 *Storage:* Temporary (reset on restart)\n\n"
     else:
         welcome_text += "💾 *Storage:* Permanent settings\n\n"

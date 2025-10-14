@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """
-Telegram Image-to-Text Converter Bot - Railway Optimized
+🎯 ImageToText Pro Bot - Production Ready for Railway
+Advanced OCR Telegram Bot with Multi-Engine Support
 """
 import os
 import logging
 import asyncio
 import sys
+
+# Fix Windows console encoding
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
 from telegram import Update
 from telegram.ext import (
     Application, 
@@ -16,183 +24,139 @@ from telegram.ext import (
     filters
 )
 
-# Enhanced logging
+# Production logging configuration
+class ProductionFormatter(logging.Formatter):
+    """Production formatter with emoji support"""
+    def format(self, record):
+        original = super().format(record)
+        # Add production prefix
+        if record.levelname == 'INFO':
+            return f"📊 {original}"
+        elif record.levelname == 'WARNING':
+            return f"⚠️ {original}"
+        elif record.levelname == 'ERROR':
+            return f"❌ {original}"
+        elif record.levelname == 'DEBUG':
+            return f"🔍 {original}"
+        return original
+
+# Configure production logging
 logging.basicConfig(
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('production.log', encoding='utf-8')
+    ]
 )
+
+# Apply production formatter
+for handler in logging.getLogger().handlers:
+    handler.setFormatter(ProductionFormatter())
+
 logger = logging.getLogger(__name__)
 
-def setup_mock_database():
-    """Create a simple mock database when MongoDB is not available"""
-    logger.info("🔄 Setting up mock database...")
-    
-    class MockCollection:
-        def __init__(self, name):
-            self.name = name
-            self.data = {}
-        
-        def insert_one(self, document):
-            doc_id = str(len(self.data) + 1)
-            self.data[doc_id] = document
-            return type('Result', (), {'inserted_id': doc_id})
-        
-        def find_one(self, query=None):
-            if not self.data:
-                return None
-            return list(self.data.values())[-1]  # Return last inserted
-        
-        def update_one(self, query, update, upsert=False):
-            if '$set' in update:
-                for key, value in update['$set'].items():
-                    if self.data:
-                        last_key = list(self.data.keys())[-1]
-                        self.data[last_key][key] = value
-            return type('Result', (), {'matched_count': 1, 'modified_count': 1})
-        
-        def count_documents(self, query=None):
-            return len(self.data)
-    
-    class MockDatabase:
-        def __init__(self):
-            self.collections = {}
-        
-        def __getitem__(self, name):
-            if name not in self.collections:
-                self.collections[name] = MockCollection(name)
-            return self.collections[name]
-    
-    logger.info("✅ Mock database setup complete")
-    return MockDatabase()
+class ProductionConfig:
+    """Production configuration"""
+    BOT_NAME = "🎯 ImageToText Pro"
+    VERSION = "2.1.0"
+    SUPPORT_EMAIL = "tolesadebushe9@gmail.com"
+    CHANNEL = "@ImageToTextConverter"
+    MAX_CONCURRENT_USERS = 100
+    REQUEST_TIMEOUT = 30
+    MAX_IMAGE_SIZE = 15 * 1024 * 1024  # 15MB
 
-def validate_environment():
-    """Validate that all required environment variables are set"""
-    logger.info("🔍 Validating environment variables...")
+def validate_production_environment():
+    """Validate production environment variables"""
+    logger.info("🔍 Validating production environment...")
     
-    # Check BOT_TOKEN
-    BOT_TOKEN = os.getenv('BOT_TOKEN')
-    if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN environment variable is not set!")
-        logger.error("💡 Please set BOT_TOKEN in Railway environment variables")
+    required_vars = ['BOT_TOKEN']
+    missing_vars = []
+    
+    for var in required_vars:
+        if not os.getenv(var):
+            missing_vars.append(var)
+    
+    if missing_vars:
+        logger.error(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
         return False
     
-    logger.info(f"✅ BOT_TOKEN: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
-    
-    # Check MONGODB_URI (optional but recommended)
-    MONGODB_URI = os.getenv('MONGODB_URI')
-    if not MONGODB_URI:
-        logger.warning("⚠️ MONGODB_URI not set, using mock database")
-    else:
-        logger.info(f"✅ MONGODB_URI: {MONGODB_URI[:20]}...")
-    
-    # Check SUPPORT_EMAIL
-    SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'tolesadebushe9@gmail.com')
-    logger.info(f"✅ SUPPORT_EMAIL: {SUPPORT_EMAIL}")
+    # Log configuration (safely)
+    bot_token = os.getenv('BOT_TOKEN', '')
+    logger.info(f"✅ BOT_TOKEN: {bot_token[:10]}...{bot_token[-10:]}")
+    logger.info(f"✅ Database: {'MongoDB' if os.getenv('MONGODB_URI') else 'Production Mock'}")
+    logger.info(f"✅ Support: {ProductionConfig.SUPPORT_EMAIL}")
+    logger.info(f"✅ Channel: {ProductionConfig.CHANNEL}")
+    logger.info(f"✅ Version: {ProductionConfig.VERSION}")
     
     return True
 
-def setup_database():
-    """Setup database connection with improved error handling"""
-    try:
-        MONGODB_URI = os.getenv('MONGODB_URI')
-        if not MONGODB_URI:
-            logger.warning("⚠️ MONGODB_URI not set, using mock database")
-            return setup_mock_database()
-        
-        import pymongo
-        from pymongo.errors import ConnectionFailure
-        
-        # Try multiple connection strategies
-        connection_strategies = [
-            # Strategy 1: Standard connection with SSL
-            {
-                'tls': True,
-                'tlsAllowInvalidCertificates': False,
-                'retryWrites': True,
-                'w': 'majority'
-            },
-            # Strategy 2: Without SSL (for local development)
-            {
-                'tls': False,
-                'retryWrites': True,
-                'w': 'majority'
-            },
-            # Strategy 3: Allow invalid certificates
-            {
-                'tls': True,
-                'tlsAllowInvalidCertificates': True,
-                'retryWrites': True,
-                'w': 'majority'
-            }
-        ]
-        
-        client = None
-        last_error = None
-        
-        for i, strategy in enumerate(connection_strategies):
-            try:
-                logger.info(f"🔄 Trying MongoDB connection strategy {i + 1}...")
-                
-                client = pymongo.MongoClient(
-                    MONGODB_URI,
-                    connectTimeoutMS=30000,
-                    socketTimeoutMS=30000,
-                    serverSelectionTimeoutMS=30000,
-                    **strategy
-                )
-                
-                # Test the connection
-                client.admin.command('ismaster')
-                db = client.get_database()
-                logger.info(f"✅ MongoDB connection established successfully with strategy {i + 1}")
-                return db
-                
-            except Exception as e:
-                last_error = e
-                logger.warning(f"❌ MongoDB connection strategy {i + 1} failed: {str(e)[:100]}...")
-                if client:
-                    client.close()
-                continue
-        
-        # If all strategies fail
-        logger.error(f"❌ All MongoDB connection strategies failed. Last error: {last_error}")
-        logger.info("🔄 Falling back to mock database...")
-        return setup_mock_database()
-        
-    except Exception as e:
-        logger.error(f"❌ MongoDB connection failed: {e}")
-        logger.info("🔄 Setting up mock database...")
-        return setup_mock_database()
+def setup_production_database():
+    """Setup production database with Railway compatibility"""
+    from database.mongodb import db
+    
+    if db.is_mock:
+        logger.info("🔄 Using production mock database")
+    else:
+        logger.info("🔄 Using MongoDB Atlas")
+    
+    return db
 
-async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle unknown callback queries"""
-    query = update.callback_query
-    await query.answer()
-    logger.warning(f"Unknown callback received: {query.data}")
-    await query.edit_message_text(
-        "❓ Unknown command. Please use the menu buttons.",
-        parse_mode='Markdown'
-    )
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    """Handle errors in the bot"""
-    logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+async def production_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Production error handler"""
+    logger.error("🚨 Production error occurred:", exc_info=context.error)
     
     try:
         if update and hasattr(update, 'effective_chat'):
+            error_message = (
+                "❌ *System Temporarily Unavailable*\n\n"
+                "Our system encountered an unexpected error. "
+                "The technical team has been notified.\n\n"
+                "Please try again in a few moments."
+            )
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="❌ Sorry, an error occurred. Please try again."
+                text=error_message,
+                parse_mode='Markdown'
             )
     except Exception as e:
         logger.error(f"Error sending error message: {e}")
 
-def setup_handlers(application, db):
-    """Setup all bot handlers"""
+async def production_unknown_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle unknown callbacks in production"""
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "🔍 *Unknown Command*\n\n"
+        "This button is no longer active. Please use the current menu options.",
+        parse_mode='Markdown'
+    )
+
+async def test_production_connection(application):
+    """Test production bot connection"""
     try:
-        logger.info("🚀 Setting up bot handlers...")
+        bot = application.bot
+        me = await asyncio.wait_for(bot.get_me(), timeout=10.0)
         
-        # Import handlers
+        logger.info(f"✅ Production Bot: @{me.username}")
+        logger.info(f"✅ Bot Name: {me.first_name}")
+        logger.info(f"✅ Bot ID: {me.id}")
+        
+        return True
+    except asyncio.TimeoutError:
+        logger.error("❌ Bot connection timeout")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Bot connection failed: {e}")
+        return False
+
+def setup_production_handlers(application):
+    """Setup production handlers"""
+    try:
+        logger.info("🚀 Setting up production handlers...")
+        
+        # Import production handlers
         try:
             from handlers.start import start_command, handle_membership_check, force_check_membership
             from handlers.help import help_command, handle_help_callback
@@ -209,149 +173,155 @@ def setup_handlers(application, db):
                 show_language_group
             )
         except ImportError as e:
-            logger.error(f"❌ Failed to import handlers: {e}")
-            # Create fallback handlers
-            async def fallback_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-                await update.message.reply_text("🤖 Bot is starting up. Please try again in a moment.")
-            
-            async def fallback_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-                await update.message.reply_text("📖 Help is not available at the moment. Please try again later.")
-            
-            async def fallback_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-                await update.message.reply_text("🖼️ Image processing is temporarily unavailable.")
-            
-            # Use fallback handlers
-            application.add_handler(CommandHandler("start", fallback_start))
-            application.add_handler(CommandHandler("help", fallback_help))
-            application.add_handler(MessageHandler(filters.PHOTO, fallback_image))
-            application.add_handler(CallbackQueryHandler(handle_unknown_callback))
-            application.add_error_handler(error_handler)
-            logger.warning("⚠️ Using fallback handlers due to import errors")
-            return True
+            logger.error(f"❌ Handler import failed: {e}")
+            return False
         
-        # Command handlers
-        application.add_handler(CommandHandler("start", lambda u, c: start_command(u, c, db)))
-        application.add_handler(CommandHandler("help", lambda u, c: help_command(u, c, db)))
-        application.add_handler(CommandHandler("settings", lambda u, c: show_settings_menu(u, c, db)))
-        application.add_handler(CommandHandler("stats", lambda u, c: show_statistics(u, c, db)))
-        application.add_handler(CommandHandler("check", lambda u, c: force_check_membership(u, c, db)))
+        # Production command handlers
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("settings", show_settings_menu))
+        application.add_handler(CommandHandler("stats", show_statistics))
+        application.add_handler(CommandHandler("check", force_check_membership))
         
-        # Message handlers
-        application.add_handler(MessageHandler(filters.PHOTO, lambda u, c: handle_image(u, c, db)))
+        # Production message handlers
+        application.add_handler(MessageHandler(filters.PHOTO, handle_image))
         
-        # Callback query handlers
-        application.add_handler(CallbackQueryHandler(lambda u, c: handle_membership_check(u, c, db), pattern="^check_membership$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: show_main_menu(u, c, db), pattern="^main_menu$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: show_settings_menu(u, c, db), pattern="^settings$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: show_statistics(u, c, db), pattern="^statistics$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: handle_help_callback(u, c, db), pattern="^help$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: handle_convert_image(u, c, db), pattern="^convert_image$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: show_language_menu(u, c, db), pattern="^change_language$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: show_language_group(u, c, db), pattern="^language_group_"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: show_format_menu(u, c, db), pattern="^change_format$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: handle_language_change(u, c, db), pattern="^set_language_"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: handle_format_change(u, c, db), pattern="^set_format_"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: handle_help_callback(u, c, db), pattern="^contact_support$"))
-        application.add_handler(CallbackQueryHandler(lambda u, c: handle_reformat(u, c, db), pattern="^reformat_"))
-        application.add_handler(CallbackQueryHandler(handle_unknown_callback))
+        # Production callback handlers
+        callback_patterns = [
+            ("check_membership", handle_membership_check),
+            ("main_menu", show_main_menu),
+            ("settings", show_settings_menu),
+            ("statistics", show_statistics),
+            ("help", handle_help_callback),
+            ("convert_image", handle_convert_image),
+            ("change_language", show_language_menu),
+            ("language_group_", show_language_group),
+            ("change_format", show_format_menu),
+            ("set_language_", handle_language_change),
+            ("set_format_", handle_format_change),
+            ("contact_support", handle_help_callback),
+            ("reformat_", handle_reformat)
+        ]
         
-        # Error handler
-        application.add_error_handler(error_handler)
+        for pattern, handler in callback_patterns:
+            application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
         
-        logger.info("✅ All bot handlers registered successfully")
+        # Unknown callback handler
+        application.add_handler(CallbackQueryHandler(production_unknown_callback))
+        
+        # Production error handler
+        application.add_error_handler(production_error_handler)
+        
+        logger.info(f"✅ Production handlers registered: {len(callback_patterns)} patterns")
         return True
         
     except Exception as e:
-        logger.error(f"❌ Failed to setup handlers: {e}", exc_info=True)
+        logger.error(f"❌ Handler setup failed: {e}")
         return False
 
-async def test_bot_connection(application):
-    """Test if bot can connect to Telegram"""
+async def production_main():
+    """Production main function"""
     try:
-        bot = application.bot
-        me = await bot.get_me()
-        logger.info(f"✅ Bot connected: @{me.username} ({me.first_name})")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Bot connection failed: {e}")
-        return False
-
-async def main_async():
-    """Async main function to start the bot"""
-    try:
-        logger.info("🤖 Starting Telegram Image-to-Text Converter Bot on Railway...")
+        # Production banner
+        logger.info("🎯" + "="*60)
+        logger.info(f"🚀 {ProductionConfig.BOT_NAME} v{ProductionConfig.VERSION}")
+        logger.info("🎯" + "="*60)
         
-        # Validate environment first
-        if not validate_environment():
-            logger.error("❌ Environment validation failed, exiting...")
+        # Validate environment
+        if not validate_production_environment():
+            logger.error("❌ Production environment validation failed")
             return 1
         
         BOT_TOKEN = os.getenv('BOT_TOKEN')
+        if not BOT_TOKEN:
+            logger.error("❌ BOT_TOKEN not found")
+            return 1
         
-        # Setup database
-        db = setup_database()
+        # Setup production database
+        db = setup_production_database()
         
-        # Create application
+        # Create production application
         application = Application.builder().token(BOT_TOKEN).build()
         
-        # Test bot connection
-        connection_ok = await test_bot_connection(application)
-        if not connection_ok:
-            logger.error("❌ Bot connection test failed, exiting...")
+        # Store database in bot_data for handlers to access
+        application.bot_data['db'] = db
+        
+        # Test production connection
+        if not await test_production_connection(application):
+            logger.error("❌ Production connection test failed")
             return 1
         
-        # Setup handlers
-        if not setup_handlers(application, db):
-            logger.error("❌ Handler setup failed, exiting...")
+        # Setup production handlers
+        if not setup_production_handlers(application):
+            logger.error("❌ Production handler setup failed")
             return 1
         
-        logger.info("🚀 Starting bot in polling mode...")
+        # Start production bot
+        logger.info("🎯 Starting production bot...")
         
-        # Initialize and start the bot
         await application.initialize()
         await application.start()
         await application.updater.start_polling(
             drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
+            allowed_updates=Update.ALL_TYPES,
+            poll_interval=0.5,
+            timeout=10
         )
         
-        logger.info("✅ Bot is now running and ready to receive messages...")
+        # Production ready message
+        logger.info("🎉" + "="*60)
+        logger.info("✅ PRODUCTION BOT IS NOW LIVE ON RAILWAY!")
+        logger.info(f"📊 Max concurrent users: {ProductionConfig.MAX_CONCURRENT_USERS}")
+        logger.info(f"⏱️ Request timeout: {ProductionConfig.REQUEST_TIMEOUT}s")
+        logger.info(f"📸 Max image size: {ProductionConfig.MAX_IMAGE_SIZE // 1024 // 1024}MB")
+        logger.info("🎉" + "="*60)
         
-        # Keep the bot running until stopped
+        # Production monitoring loop
+        startup_time = asyncio.get_event_loop().time()
+        request_count = 0
+        
         while True:
-            await asyncio.sleep(3600)  # Sleep for 1 hour
+            await asyncio.sleep(300)  # 5 minutes
+            uptime = asyncio.get_event_loop().time() - startup_time
+            hours = int(uptime // 3600)
+            minutes = int((uptime % 3600) // 60)
             
+            logger.info(f"📈 Production uptime: {hours}h {minutes}m - Requests: {request_count}")
+            
+    except KeyboardInterrupt:
+        logger.info("🛑 Production bot stopped by operator")
     except Exception as e:
-        logger.error(f"❌ Failed to start bot: {e}", exc_info=True)
+        logger.error(f"🚨 Production crash: {e}", exc_info=True)
         return 1
     finally:
-        # Cleanup when bot stops
+        # Graceful shutdown
         try:
             if 'application' in locals():
                 await application.updater.stop()
                 await application.stop()
                 await application.shutdown()
-                logger.info("✅ Bot stopped gracefully")
+                logger.info("✅ Production shutdown completed")
         except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
+            logger.error(f"❌ Shutdown error: {e}")
+    
+    return 0
 
 def main():
-    """Main function to start the bot with proper event loop handling"""
+    """Production entry point"""
     from dotenv import load_dotenv
     load_dotenv()
     
-    # Set up proper event loop policy for Windows
+    # Windows compatibility
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     
     try:
-        # Run the async main function
-        return asyncio.run(main_async())
+        return asyncio.run(production_main())
     except KeyboardInterrupt:
-        logger.info("🛑 Bot stopped by user")
+        logger.info("🛑 Production interrupted")
         return 0
     except Exception as e:
-        logger.error(f"❌ Unexpected error in main: {e}", exc_info=True)
+        logger.error(f"🚨 Production fatal error: {e}")
         return 1
 
 if __name__ == '__main__':

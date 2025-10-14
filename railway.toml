@@ -1,8 +1,10 @@
 [build]
-builder = "DOCKERFILE"
+builder = "nixpacks"
 
 [deploy]
 startCommand = "python bot.py"
 
-[build.nginx]
-enable = false
+[env]
+BOT_TOKEN = "your-bot-token"
+MONGODB_URI = "your-mongodb-uri"
+SUPPORT_EMAIL = "tolesadebushe9@gmail.com"

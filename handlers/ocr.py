@@ -2,8 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
 import traceback
-from database.mongodb import db
-from utils.image_processing import ImageProcessor
+from utils.image_processing import ocr_processor
 from utils.text_formatter import TextFormatter
 import config
 import logging
@@ -17,6 +16,9 @@ processing_cache = {}
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming images with multi-language support"""
+    # Get database from bot_data
+    db = context.bot_data.get('db')
+    
     user_id = update.effective_user.id
     message = update.message
     
@@ -31,7 +33,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Get user settings
     try:
-        user = db.get_user(user_id)
+        user = db.get_user(user_id) if db else None
         user_settings = user.get('settings', {}) if user else {}
     except Exception as e:
         logger.error(f"Error getting user settings: {e}")
@@ -70,7 +72,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Extract text with timeout
         try:
             extracted_text = await asyncio.wait_for(
-                ImageProcessor.extract_text_async(bytes(photo_bytes), lang_code),
+                ocr_processor.extract_text_optimized(bytes(photo_bytes), language),
                 timeout=config.PROCESSING_TIMEOUT
             )
             
@@ -108,16 +110,17 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Log successful request
         try:
-            db.log_ocr_request({
-                'user_id': user_id,
-                'timestamp': datetime.now(),
-                'language': language,
-                'language_display': language_display,
-                'format': text_format,
-                'text_length': len(extracted_text),
-                'processing_time': processing_time,
-                'status': 'success'
-            })
+            if db:
+                db.log_ocr_request({
+                    'user_id': user_id,
+                    'timestamp': datetime.now(),
+                    'language': language,
+                    'language_display': language_display,
+                    'format': text_format,
+                    'text_length': len(extracted_text),
+                    'processing_time': processing_time,
+                    'status': 'success'
+                })
         except Exception as e:
             logger.error(f"Error logging OCR request: {e}")
         
@@ -165,15 +168,16 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Log error
         try:
-            db.log_ocr_request({
-                'user_id': user_id,
-                'timestamp': datetime.now(),
-                'language': language,
-                'language_display': language_display,
-                'format': text_format,
-                'status': 'error',
-                'error': str(e)
-            })
+            if db:
+                db.log_ocr_request({
+                    'user_id': user_id,
+                    'timestamp': datetime.now(),
+                    'language': language,
+                    'language_display': language_display,
+                    'format': text_format,
+                    'status': 'error',
+                    'error': str(e)
+                })
         except Exception as log_error:
             logger.error(f"Error logging OCR error: {log_error}")
     
@@ -216,6 +220,9 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text reformatting - ULTRA SIMPLE VERSION"""
     query = update.callback_query
     await query.answer()
+    
+    # Get database from bot_data
+    db = context.bot_data.get('db')
     
     try:
         data = query.data

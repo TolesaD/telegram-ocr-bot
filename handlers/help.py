@@ -1,6 +1,10 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-import config
+from database.mongodb import db
+import config  # CHANGED FROM config_optimized to config
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command"""

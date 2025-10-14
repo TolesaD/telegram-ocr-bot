@@ -1,204 +1,361 @@
-import pytesseract
-from PIL import Image, ImageEnhance, ImageFilter
-import io
 import asyncio
 import logging
-import os
 import time
+import cv2
+import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter
+import io
+import os
+import pytesseract
+from concurrent.futures import ThreadPoolExecutor
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set Tesseract path for Windows
+if os.name == 'nt':  # Windows
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
 logger = logging.getLogger(__name__)
 
-class ImageProcessor:
+# Thread pool for CPU-intensive tasks
+thread_pool = ThreadPoolExecutor(max_workers=3)
+
+class OCRProcessor:
+    def __init__(self):
+        self.engines = {}
+        self.setup_engines()
     
-    @staticmethod
-    def setup_tesseract_path():
-        """Set Tesseract path for Railway (Linux)"""
-        # Railway uses standard Linux paths
-        possible_paths = [
-            '/usr/bin/tesseract',
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                pytesseract.pytesseract.tesseract_cmd = path
-                logger.info(f"✅ Tesseract path set to: {path}")
-                return True
-        
-        # Fallback: try system PATH
+    def setup_engines(self):
+        """Setup available OCR engines with fallback"""
         try:
+            # Setup Tesseract (Primary)
+            if self.setup_tesseract():
+                self.engines['tesseract'] = {
+                    'name': 'Tesseract',
+                    'priority': 1,
+                    'languages': self.get_tesseract_languages()
+                }
+            
+            # Try to setup PaddleOCR (Optional - will be skipped if not installed)
+            if self.setup_paddle_ocr():
+                self.engines['paddle_ocr'] = {
+                    'name': 'PaddleOCR',
+                    'priority': 2,
+                    'languages': ['en', 'ch', 'fr', 'de', 'es', 'it', 'pt', 'ru', 'ja', 'ko', 'ar', 'hi']
+                }
+            else:
+                logger.warning("PaddleOCR not available, using Tesseract only")
+            
+            logger.info("OCR Engines loaded: %s", list(self.engines.keys()))
+            
+        except Exception as e:
+            logger.error("Error setting up OCR engines: %s", e)
+    
+    def setup_tesseract(self):
+        """Setup Tesseract path"""
+        try:
+            # Test if Tesseract works
             pytesseract.get_tesseract_version()
-            logger.info("✅ Tesseract found in system PATH")
+            logger.info("Tesseract initialized successfully")
             return True
-        except:
-            logger.error("❌ Tesseract not found")
+        except Exception as e:
+            logger.error("Tesseract initialization failed: %s", e)
             return False
     
-    @staticmethod
-    def get_available_languages():
-        """Get all available languages on Railway"""
+    def setup_paddle_ocr(self):
+        """Setup PaddleOCR with graceful fallback"""
         try:
-            # Since we installed tesseract-ocr-all, we should have all languages
-            # Let's test the most common ones
-            common_languages = [
-                'eng', 'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'nld', 'tur',
-                'ara', 'heb', 'fas', 'chi_sim', 'jpn', 'kor', 'tha', 'vie',
-                'amh', 'afr', 'swa', 'yor', 'hau', 'ibo', 'som', 'zul', 'xho',
-                'hin', 'ben', 'tam', 'tel', 'mar', 'urd', 'guj', 'pan'
-            ]
-            
-            available = []
-            for lang in common_languages:
-                if ImageProcessor.check_language_available(lang):
-                    available.append(lang)
-            
-            logger.info(f"📋 Available languages: {len(available)}")
-            return available
-            
+            import paddleocr
+            self.paddle_ocr = paddleocr.PaddleOCR(
+                use_angle_cls=True,
+                lang='en',
+                show_log=False,
+                use_gpu=False
+            )
+            logger.info("PaddleOCR initialized")
+            return True
+        except ImportError:
+            logger.warning("PaddleOCR not installed. Install with: pip install paddleocr")
+            return False
         except Exception as e:
-            logger.error(f"Error getting available languages: {e}")
-            return ['eng']  # Fallback to English
-    
-    @staticmethod
-    def check_language_available(language_code):
-        """Check if a language is available"""
-        try:
-            if not ImageProcessor.setup_tesseract_path():
-                return False
-            
-            # Create a simple test image
-            from PIL import Image, ImageDraw
-            img = Image.new('RGB', (100, 30), color='white')
-            d = ImageDraw.Draw(img)
-            d.text((10, 10), "test", fill='black')
-            
-            # Try to use the language
-            try:
-                pytesseract.image_to_string(img, lang=language_code, timeout=2)
-                return True
-            except:
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error checking language {language_code}: {e}")
+            logger.warning("PaddleOCR initialization failed: %s", e)
             return False
     
-    @staticmethod
-    def fast_preprocess_image(image_bytes):
-        """FAST image preprocessing"""
+    def get_tesseract_languages(self):
+        """Get available Tesseract languages"""
         try:
-            start_time = time.time()
-            
-            image = Image.open(io.BytesIO(image_bytes))
-            original_size = image.size
-            
-            # Resize large images
-            max_dimension = 1600
-            if max(original_size) > max_dimension:
-                ratio = max_dimension / max(original_size)
-                new_size = (int(original_size[0] * ratio), int(original_size[1] * ratio))
-                image = image.resize(new_size, Image.Resampling.LANCZOS)
-                logger.info(f"📐 Resized: {original_size} → {new_size}")
-            
-            # Convert to grayscale
-            if image.mode != 'L':
-                image = image.convert('L')
-            
-            # Enhance contrast
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(1.3)
-            
-            # Mild sharpening
-            image = image.filter(ImageFilter.SHARPEN)
-            
-            processing_time = time.time() - start_time
-            logger.info(f"⚡ Preprocessing completed in {processing_time:.2f}s")
-            
-            return image
-            
+            # Get available languages
+            available_langs = pytesseract.get_languages()
+            logger.info("Available Tesseract languages: %s", available_langs)
+            return available_langs
         except Exception as e:
-            logger.error(f"Preprocessing error: {e}")
-            return Image.open(io.BytesIO(image_bytes))
+            logger.error("Error getting Tesseract languages: %s", e)
+            return ['eng']
     
-    @staticmethod
-    async def extract_text_async(image_bytes, language='eng'):
-        """Async text extraction"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, 
-            ImageProcessor.extract_text_safe, 
-            image_bytes, 
-            language
-        )
-    
-    @staticmethod
-    def extract_text_safe(image_bytes, language='eng'):
-        """Safe text extraction"""
+    async def extract_text_optimized(self, image_bytes, language='english'):
+        """Extract text using best available engine"""
+        start_time = time.time()
+        
         try:
-            start_time = time.time()
+            # Convert language name to code
+            lang_code = self.get_language_code(language)
+            logger.info("Using language: %s -> %s", language, lang_code)
             
-            if not ImageProcessor.setup_tesseract_path():
-                raise Exception("Tesseract not configured")
-            
-            # Check if language is available
-            if not ImageProcessor.check_language_available(language):
-                raise Exception(f"Language '{language}' is not available. Please try another language.")
-            
-            # Preprocess image
-            processed_image = ImageProcessor.fast_preprocess_image(image_bytes)
-            
-            # Tesseract configuration
-            custom_config = r'--oem 1 --psm 6 -c preserve_interword_spaces=1'
-            
-            # Extract text
-            text = pytesseract.image_to_string(
-                processed_image, 
-                lang=language, 
-                config=custom_config
+            # Try engines in priority order
+            engines_to_try = sorted(
+                self.engines.items(),
+                key=lambda x: x[1]['priority']
             )
             
-            total_time = time.time() - start_time
-            logger.info(f"✅ OCR completed in {total_time:.2f}s (Language: {language})")
+            last_error = None
+            for engine_name, engine_info in engines_to_try:
+                try:
+                    logger.info("Trying %s for %s (%s)", engine_name, language, lang_code)
+                    
+                    if engine_name == 'paddle_ocr':
+                        text = await self.extract_with_paddle_ocr(image_bytes, lang_code)
+                    elif engine_name == 'tesseract':
+                        text = await self.extract_with_tesseract(image_bytes, lang_code)
+                    else:
+                        continue
+                    
+                    if text and len(text.strip()) > 5:  # Valid text found
+                        processing_time = time.time() - start_time
+                        logger.info("%s succeeded in %.2fs", engine_name, processing_time)
+                        return text
+                        
+                except Exception as e:
+                    last_error = e
+                    logger.warning("%s failed: %s", engine_name, str(e))
+                    continue
             
-            cleaned_text = ImageProcessor.clean_extracted_text(text)
+            # All engines failed
+            error_msg = f"All OCR engines failed for {language}"
+            if last_error:
+                error_msg += f". Last error: {last_error}"
+            raise Exception(error_msg)
+            
+        except Exception as e:
+            logger.error("OCR processing failed: %s", e)
+            raise
+    
+    def get_language_code(self, language_name):
+        """Convert language name to Tesseract code"""
+        # Simple language mapping
+        language_map = {
+            'english': 'eng',
+            'spanish': 'spa', 
+            'french': 'fra',
+            'german': 'deu',
+            'italian': 'ita',
+            'portuguese': 'por',
+            'russian': 'rus',
+            'chinese_simplified': 'chi_sim',
+            'japanese': 'jpn',
+            'korean': 'kor',
+            'arabic': 'ara',
+            'hindi': 'hin',
+            'turkish': 'tur',
+            'dutch': 'nld',
+            'swedish': 'swe',
+            'polish': 'pol',
+            'ukrainian': 'ukr',
+            'greek': 'ell',
+        }
+        
+        # Default to English if language not found
+        return language_map.get(language_name.lower(), 'eng')
+    
+    async def extract_with_tesseract(self, image_bytes, lang_code):
+        """Extract text with Tesseract"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            thread_pool,
+            self._tesseract_extract,
+            image_bytes,
+            lang_code
+        )
+    
+    def _tesseract_extract(self, image_bytes, lang_code):
+        """Tesseract extraction in thread"""
+        try:
+            # Preprocess image
+            processed_image = self.fast_preprocess_image(image_bytes)
+            
+            # Check if language is available
+            available_langs = self.get_tesseract_languages()
+            if lang_code not in available_langs:
+                logger.warning("Language %s not available, using English", lang_code)
+                lang_code = 'eng'
+            
+            # Try different page segmentation modes if default fails
+            psm_modes = [6, 3, 4, 8, 11]  # Try different modes
+            
+            for psm_mode in psm_modes:
+                try:
+                    config = f'--oem 3 --psm {psm_mode}'
+                    text = pytesseract.image_to_string(
+                        processed_image,
+                        lang=lang_code,
+                        config=config,
+                        timeout=30
+                    )
+                    
+                    cleaned_text = self.clean_text(text)
+                    
+                    # If we got reasonable text, use it
+                    if cleaned_text and len(cleaned_text.strip()) > 10:
+                        logger.info("PSM mode %d successful", psm_mode)
+                        return cleaned_text
+                        
+                except Exception as e:
+                    logger.warning("PSM mode %d failed: %s", psm_mode, str(e))
+                    continue
+            
+            # If all PSM modes failed, try one more time with default
+            text = pytesseract.image_to_string(
+                processed_image,
+                lang=lang_code,
+                timeout=30
+            )
+            
+            cleaned_text = self.clean_text(text)
             
             if not cleaned_text:
-                return "No readable text found. Please try a clearer image."
+                return "No readable text found. Please try:\n• Clearer image\n• Better lighting\n• Straight photo\n• High contrast"
             
             return cleaned_text
             
         except Exception as e:
-            logger.error(f"OCR processing failed: {e}")
-            raise Exception(f"OCR Error: {str(e)}")
+            raise Exception(f"Tesseract error: {e}")
     
-    @staticmethod
-    def clean_extracted_text(text):
+    async def extract_with_paddle_ocr(self, image_bytes, lang_code):
+        """Extract text with PaddleOCR (if available)"""
+        if not hasattr(self, 'paddle_ocr'):
+            raise Exception("PaddleOCR not available")
+            
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            thread_pool,
+            self._paddle_extract,
+            image_bytes,
+            lang_code
+        )
+    
+    def _paddle_extract(self, image_bytes, lang_code):
+        """PaddleOCR extraction in thread"""
+        try:
+            # Convert to numpy array for OpenCV
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is None:
+                raise Exception("Failed to decode image")
+            
+            # Run OCR
+            result = self.paddle_ocr.ocr(img, cls=True)
+            
+            if not result or not result[0]:
+                return "No text detected in the image."
+            
+            # Combine all detected text
+            texts = []
+            for line in result[0]:
+                if line and len(line) >= 2:
+                    texts.append(line[1][0])
+            
+            cleaned_text = self.clean_text('\n'.join(texts))
+            
+            if not cleaned_text:
+                return "No readable text found."
+            
+            return cleaned_text
+            
+        except Exception as e:
+            raise Exception(f"PaddleOCR error: {e}")
+    
+    def fast_preprocess_image(self, image_bytes):
+        """Fast image preprocessing with OpenCV"""
+        try:
+            # Convert to numpy array
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is None:
+                # Fallback to PIL if OpenCV fails
+                return Image.open(io.BytesIO(image_bytes))
+            
+            # Resize if too large (better for OCR accuracy)
+            height, width = img.shape[:2]
+            max_dim = 1200  # Reduced for better performance
+            if max(height, width) > max_dim:
+                scale = max_dim / max(height, width)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+            
+            # Convert to grayscale
+            if len(img.shape) == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Apply mild Gaussian blur to reduce noise
+            img = cv2.GaussianBlur(img, (1, 1), 0)
+            
+            # Enhance contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            img = clahe.apply(img)
+            
+            # Apply threshold to get binary image
+            _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Convert back to PIL for Tesseract
+            pil_img = Image.fromarray(img)
+            return pil_img
+            
+        except Exception as e:
+            logger.error("Preprocessing error: %s", e)
+            # Fallback to simple PIL processing
+            try:
+                image = Image.open(io.BytesIO(image_bytes))
+                # Simple preprocessing
+                if image.mode != 'L':
+                    image = image.convert('L')
+                enhancer = ImageEnhance.Contrast(image)
+                image = enhancer.enhance(2.0)  # Increase contrast
+                return image
+            except:
+                return Image.open(io.BytesIO(image_bytes))
+    
+    def clean_text(self, text):
         """Clean extracted text"""
         if not text:
             return ""
         
-        lines = text.split('\n')
-        cleaned_lines = []
+        # Remove extra whitespace and empty lines
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
         
+        # Filter out lines that are too short or don't contain text
+        filtered_lines = []
         for line in lines:
-            stripped_line = line.strip()
-            if len(stripped_line) > 1 and any(c.isalnum() for c in stripped_line):
-                cleaned_lines.append(stripped_line)
+            # Keep lines with meaningful content
+            if len(line) > 1:
+                # Check if line contains letters or numbers
+                has_text = any(c.isalnum() for c in line)
+                if has_text:
+                    filtered_lines.append(line)
         
-        return '\n'.join(cleaned_lines)
+        result = '\n'.join(filtered_lines)
+        
+        # If result is too short, return a helpful message
+        if len(result.strip()) < 10:
+            return "Very little text detected. Please try a clearer image with more visible text."
+        
+        return result
 
-# Initialize on import
-print("🔍 Initializing Tesseract on Railway...")
-if ImageProcessor.setup_tesseract_path():
-    try:
-        version = pytesseract.get_tesseract_version()
-        print(f"✅ Tesseract OCR v{version} is ready!")
-        available_langs = ImageProcessor.get_available_languages()
-        print(f"📍 Available languages: {len(available_langs)}")
-        # Show first 10 languages as sample
-        print(f"📍 Sample: {available_langs[:10]}...")
-    except Exception as e:
-        print(f"❌ Tesseract initialization failed: {e}")
-else:
-    print("❌ Tesseract not found")
+# Global instance
+ocr_processor = OCRProcessor()
+
+# Backward compatibility
+class ImageProcessor:
+    @staticmethod
+    async def extract_text_async(image_bytes, language='eng'):
+        """Backward compatibility method"""
+        return await ocr_processor.extract_text_optimized(image_bytes, 'english')
