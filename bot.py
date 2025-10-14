@@ -1,202 +1,358 @@
 #!/usr/bin/env python3
 """
-Telegram Image-to-Text Converter Bot
-Railway Comprehensive Debug Version
+Telegram Image-to-Text Converter Bot - Railway Optimized
 """
 import os
 import logging
-import sys
 import asyncio
+import sys
+from telegram import Update
+from telegram.ext import (
+    Application, 
+    CommandHandler, 
+    MessageHandler, 
+    CallbackQueryHandler, 
+    ContextTypes, 
+    filters
+)
 
-# Set up logging
+# Enhanced logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-def comprehensive_debug():
-    """Comprehensive environment debugging"""
-    logger.info("🔍 COMPREHENSIVE DEBUG STARTED")
+def setup_mock_database():
+    """Create a simple mock database when MongoDB is not available"""
+    logger.info("🔄 Setting up mock database...")
     
-    # 1. Check if we're on Railway
-    is_railway = 'RAILWAY_ENVIRONMENT' in os.environ
-    logger.info(f"🚄 Running on Railway: {is_railway}")
+    class MockCollection:
+        def __init__(self, name):
+            self.name = name
+            self.data = {}
+        
+        def insert_one(self, document):
+            doc_id = str(len(self.data) + 1)
+            self.data[doc_id] = document
+            return type('Result', (), {'inserted_id': doc_id})
+        
+        def find_one(self, query=None):
+            if not self.data:
+                return None
+            return list(self.data.values())[-1]  # Return last inserted
+        
+        def update_one(self, query, update, upsert=False):
+            if '$set' in update:
+                for key, value in update['$set'].items():
+                    if self.data:
+                        last_key = list(self.data.keys())[-1]
+                        self.data[last_key][key] = value
+            return type('Result', (), {'matched_count': 1, 'modified_count': 1})
+        
+        def count_documents(self, query=None):
+            return len(self.data)
     
-    # 2. List ALL environment variables
-    all_vars = dict(os.environ)
-    logger.info(f"📋 Total environment variables: {len(all_vars)}")
+    class MockDatabase:
+        def __init__(self):
+            self.collections = {}
+        
+        def __getitem__(self, name):
+            if name not in self.collections:
+                self.collections[name] = MockCollection(name)
+            return self.collections[name]
     
-    # 3. Show all variable names (without values for security)
-    logger.info("📝 All environment variable NAMES:")
-    for key in sorted(all_vars.keys()):
-        logger.info(f"   - {key}")
+    logger.info("✅ Mock database setup complete")
+    return MockDatabase()
+
+def validate_environment():
+    """Validate that all required environment variables are set"""
+    logger.info("🔍 Validating environment variables...")
     
-    # 4. Check for BOT_TOKEN specifically
+    # Check BOT_TOKEN
     BOT_TOKEN = os.getenv('BOT_TOKEN')
-    logger.info(f"🔑 BOT_TOKEN exists: {BOT_TOKEN is not None}")
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN environment variable is not set!")
+        logger.error("💡 Please set BOT_TOKEN in Railway environment variables")
+        return False
     
-    if BOT_TOKEN:
-        logger.info(f"✅ BOT_TOKEN length: {len(BOT_TOKEN)}")
-        logger.info(f"✅ BOT_TOKEN starts with: {BOT_TOKEN[:10]}...")
-        logger.info(f"✅ BOT_TOKEN ends with: ...{BOT_TOKEN[-10:]}")
-        
-        # Check token format
-        if ':' in BOT_TOKEN:
-            logger.info("✅ BOT_TOKEN format appears correct (contains colon)")
-        else:
-            logger.warning("⚠️ BOT_TOKEN format may be incorrect (no colon)")
+    logger.info(f"✅ BOT_TOKEN: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
+    
+    # Check MONGODB_URI (optional but recommended)
+    MONGODB_URI = os.getenv('MONGODB_URI')
+    if not MONGODB_URI:
+        logger.warning("⚠️ MONGODB_URI not set, using mock database")
     else:
-        logger.error("❌ BOT_TOKEN is None/not set")
+        logger.info(f"✅ MONGODB_URI: {MONGODB_URI[:20]}...")
     
-    # 5. Check for common alternative names
-    alternative_names = [
-        'TELEGRAM_BOT_TOKEN', 'BOTTOKEN', 'TELEGRAM_TOKEN', 
-        'BOT_TOKEN', 'TOKEN', 'TELEGRAM_BOT_TOKEN'
-    ]
+    # Check SUPPORT_EMAIL
+    SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'tolesadebushe9@gmail.com')
+    logger.info(f"✅ SUPPORT_EMAIL: {SUPPORT_EMAIL}")
     
-    logger.info("🔄 Checking alternative variable names:")
-    for name in alternative_names:
-        value = os.getenv(name)
-        if value:
-            logger.info(f"   ✅ FOUND: {name} = {value[:5]}... (length: {len(value)})")
-        else:
-            logger.info(f"   ❌ NOT FOUND: {name}")
-    
-    # 6. Check file system
-    logger.info("📁 File system check:")
+    return True
+
+def setup_database():
+    """Setup database connection with improved error handling"""
     try:
-        current_dir = os.getcwd()
-        logger.info(f"   Current directory: {current_dir}")
+        MONGODB_URI = os.getenv('MONGODB_URI')
+        if not MONGODB_URI:
+            logger.warning("⚠️ MONGODB_URI not set, using mock database")
+            return setup_mock_database()
         
-        files = os.listdir('.')
-        logger.info(f"   Files in current directory: {len(files)} items")
-        for file in sorted(files)[:10]:  # Show first 10 files
-            logger.info(f"     - {file}")
-            
-        if '.env' in files:
-            logger.info("   📄 .env file exists locally")
+        import pymongo
+        from pymongo.errors import ConnectionFailure
+        
+        # Try multiple connection strategies
+        connection_strategies = [
+            # Strategy 1: Standard connection with SSL
+            {
+                'tls': True,
+                'tlsAllowInvalidCertificates': False,
+                'retryWrites': True,
+                'w': 'majority'
+            },
+            # Strategy 2: Without SSL (for local development)
+            {
+                'tls': False,
+                'retryWrites': True,
+                'w': 'majority'
+            },
+            # Strategy 3: Allow invalid certificates
+            {
+                'tls': True,
+                'tlsAllowInvalidCertificates': True,
+                'retryWrites': True,
+                'w': 'majority'
+            }
+        ]
+        
+        client = None
+        last_error = None
+        
+        for i, strategy in enumerate(connection_strategies):
             try:
-                with open('.env', 'r') as f:
-                    env_content = f.read()
-                    if 'BOT_TOKEN' in env_content:
-                        logger.info("   ✅ BOT_TOKEN found in .env file")
-                    else:
-                        logger.info("   ❌ BOT_TOKEN not in .env file")
+                logger.info(f"🔄 Trying MongoDB connection strategy {i + 1}...")
+                
+                client = pymongo.MongoClient(
+                    MONGODB_URI,
+                    connectTimeoutMS=30000,
+                    socketTimeoutMS=30000,
+                    serverSelectionTimeoutMS=30000,
+                    **strategy
+                )
+                
+                # Test the connection
+                client.admin.command('ismaster')
+                db = client.get_database()
+                logger.info(f"✅ MongoDB connection established successfully with strategy {i + 1}")
+                return db
+                
             except Exception as e:
-                logger.error(f"   ❌ Error reading .env: {e}")
-        else:
-            logger.info("   📄 No .env file found")
-            
+                last_error = e
+                logger.warning(f"❌ MongoDB connection strategy {i + 1} failed: {str(e)[:100]}...")
+                if client:
+                    client.close()
+                continue
+        
+        # If all strategies fail
+        logger.error(f"❌ All MongoDB connection strategies failed. Last error: {last_error}")
+        logger.info("🔄 Falling back to mock database...")
+        return setup_mock_database()
+        
     except Exception as e:
-        logger.error(f"   ❌ File system error: {e}")
-    
-    # 7. Python environment
-    logger.info("🐍 Python environment:")
-    logger.info(f"   Python version: {sys.version}")
-    logger.info(f"   Python path: {sys.executable}")
-    logger.info(f"   Working directory: {os.getcwd()}")
-    
-    return BOT_TOKEN
+        logger.error(f"❌ MongoDB connection failed: {e}")
+        logger.info("🔄 Setting up mock database...")
+        return setup_mock_database()
 
-def test_telegram_connection(token):
-    """Test if we can connect to Telegram with the token"""
-    logger.info("🔗 Testing Telegram connection...")
+async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle unknown callback queries"""
+    query = update.callback_query
+    await query.answer()
+    logger.warning(f"Unknown callback received: {query.data}")
+    await query.edit_message_text(
+        "❓ Unknown command. Please use the menu buttons.",
+        parse_mode='Markdown'
+    )
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Handle errors in the bot"""
+    logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+    
     try:
-        import telegram
-        from telegram import Bot
+        if update and hasattr(update, 'effective_chat'):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="❌ Sorry, an error occurred. Please try again."
+            )
+    except Exception as e:
+        logger.error(f"Error sending error message: {e}")
+
+def setup_handlers(application, db):
+    """Setup all bot handlers"""
+    try:
+        logger.info("🚀 Setting up bot handlers...")
         
-        bot = Bot(token=token)
-        
-        # Test synchronous connection (simpler)
+        # Import handlers
         try:
-            me = bot.get_me()
-            logger.info(f"✅ Telegram connection SUCCESSFUL!")
-            logger.info(f"✅ Bot: @{me.username} ({me.first_name})")
-            logger.info(f"✅ Bot ID: {me.id}")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Telegram connection failed: {e}")
-            return False
+            from handlers.start import start_command, handle_membership_check, force_check_membership
+            from handlers.help import help_command, handle_help_callback
+            from handlers.ocr import handle_image, handle_reformat
+            from handlers.menu import (
+                show_main_menu, 
+                show_settings_menu, 
+                show_statistics,
+                handle_convert_image,
+                show_language_menu,
+                show_format_menu,
+                handle_language_change,
+                handle_format_change,
+                show_language_group
+            )
+        except ImportError as e:
+            logger.error(f"❌ Failed to import handlers: {e}")
+            # Create fallback handlers
+            async def fallback_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await update.message.reply_text("🤖 Bot is starting up. Please try again in a moment.")
             
-    except ImportError as e:
-        logger.error(f"❌ Telegram library import failed: {e}")
-        return False
+            async def fallback_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await update.message.reply_text("📖 Help is not available at the moment. Please try again later.")
+            
+            async def fallback_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                await update.message.reply_text("🖼️ Image processing is temporarily unavailable.")
+            
+            # Use fallback handlers
+            application.add_handler(CommandHandler("start", fallback_start))
+            application.add_handler(CommandHandler("help", fallback_help))
+            application.add_handler(MessageHandler(filters.PHOTO, fallback_image))
+            application.add_handler(CallbackQueryHandler(handle_unknown_callback))
+            application.add_error_handler(error_handler)
+            logger.warning("⚠️ Using fallback handlers due to import errors")
+            return True
+        
+        # Command handlers
+        application.add_handler(CommandHandler("start", lambda u, c: start_command(u, c, db)))
+        application.add_handler(CommandHandler("help", lambda u, c: help_command(u, c, db)))
+        application.add_handler(CommandHandler("settings", lambda u, c: show_settings_menu(u, c, db)))
+        application.add_handler(CommandHandler("stats", lambda u, c: show_statistics(u, c, db)))
+        application.add_handler(CommandHandler("check", lambda u, c: force_check_membership(u, c, db)))
+        
+        # Message handlers
+        application.add_handler(MessageHandler(filters.PHOTO, lambda u, c: handle_image(u, c, db)))
+        
+        # Callback query handlers
+        application.add_handler(CallbackQueryHandler(lambda u, c: handle_membership_check(u, c, db), pattern="^check_membership$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: show_main_menu(u, c, db), pattern="^main_menu$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: show_settings_menu(u, c, db), pattern="^settings$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: show_statistics(u, c, db), pattern="^statistics$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: handle_help_callback(u, c, db), pattern="^help$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: handle_convert_image(u, c, db), pattern="^convert_image$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: show_language_menu(u, c, db), pattern="^change_language$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: show_language_group(u, c, db), pattern="^language_group_"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: show_format_menu(u, c, db), pattern="^change_format$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: handle_language_change(u, c, db), pattern="^set_language_"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: handle_format_change(u, c, db), pattern="^set_format_"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: handle_help_callback(u, c, db), pattern="^contact_support$"))
+        application.add_handler(CallbackQueryHandler(lambda u, c: handle_reformat(u, c, db), pattern="^reformat_"))
+        application.add_handler(CallbackQueryHandler(handle_unknown_callback))
+        
+        # Error handler
+        application.add_error_handler(error_handler)
+        
+        logger.info("✅ All bot handlers registered successfully")
+        return True
+        
     except Exception as e:
-        logger.error(f"❌ Unexpected error testing Telegram: {e}")
+        logger.error(f"❌ Failed to setup handlers: {e}", exc_info=True)
         return False
 
-async def async_test_telegram_connection(token):
-    """Test Telegram connection asynchronously"""
-    logger.info("🔗 Testing Telegram connection (async)...")
+async def test_bot_connection(application):
+    """Test if bot can connect to Telegram"""
     try:
-        from telegram import Bot
-        
-        bot = Bot(token=token)
+        bot = application.bot
         me = await bot.get_me()
-        logger.info(f"✅ Async Telegram connection SUCCESSFUL!")
-        logger.info(f"✅ Bot: @{me.username} ({me.first_name})")
+        logger.info(f"✅ Bot connected: @{me.username} ({me.first_name})")
         return True
     except Exception as e:
-        logger.error(f"❌ Async Telegram connection failed: {e}")
+        logger.error(f"❌ Bot connection failed: {e}")
         return False
 
+async def main_async():
+    """Async main function to start the bot"""
+    try:
+        logger.info("🤖 Starting Telegram Image-to-Text Converter Bot on Railway...")
+        
+        # Validate environment first
+        if not validate_environment():
+            logger.error("❌ Environment validation failed, exiting...")
+            return 1
+        
+        BOT_TOKEN = os.getenv('BOT_TOKEN')
+        
+        # Setup database
+        db = setup_database()
+        
+        # Create application
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Test bot connection
+        connection_ok = await test_bot_connection(application)
+        if not connection_ok:
+            logger.error("❌ Bot connection test failed, exiting...")
+            return 1
+        
+        # Setup handlers
+        if not setup_handlers(application, db):
+            logger.error("❌ Handler setup failed, exiting...")
+            return 1
+        
+        logger.info("🚀 Starting bot in polling mode...")
+        
+        # Initialize and start the bot
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
+        
+        logger.info("✅ Bot is now running and ready to receive messages...")
+        
+        # Keep the bot running until stopped
+        while True:
+            await asyncio.sleep(3600)  # Sleep for 1 hour
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to start bot: {e}", exc_info=True)
+        return 1
+    finally:
+        # Cleanup when bot stops
+        try:
+            if 'application' in locals():
+                await application.updater.stop()
+                await application.stop()
+                await application.shutdown()
+                logger.info("✅ Bot stopped gracefully")
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+
 def main():
-    """Main debug function"""
-    logger.info("🤖 STARTING COMPREHENSIVE DEBUG")
-    logger.info("=" * 60)
+    """Main function to start the bot with proper event loop handling"""
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    # Set up proper event loop policy for Windows
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     
     try:
-        # Comprehensive debug
-        bot_token = comprehensive_debug()
-        
-        logger.info("=" * 60)
-        
-        if not bot_token:
-            logger.error("❌ CRITICAL: BOT_TOKEN not available")
-            logger.error("💡 SOLUTION: Please check:")
-            logger.error("   1. Go to Railway → Your Project → Variables")
-            logger.error("   2. Ensure BOT_TOKEN is set (exactly this name)")
-            logger.error("   3. Ensure the value is your Telegram bot token")
-            logger.error("   4. Redeploy after making changes")
-            return 1
-        
-        # Test Telegram connection
-        logger.info("🔄 Testing Telegram connection...")
-        sync_success = test_telegram_connection(bot_token)
-        
-        if not sync_success:
-            logger.error("❌ Telegram connection test failed")
-            logger.error("💡 Possible issues:")
-            logger.error("   - Bot token is invalid/expired")
-            logger.error("   - Network connectivity issues")
-            logger.error("   - Bot was deleted from @BotFather")
-            return 1
-        
-        # Test async connection
-        logger.info("🔄 Testing async Telegram connection...")
-        try:
-            async_success = asyncio.run(async_test_telegram_connection(bot_token))
-            if not async_success:
-                logger.error("❌ Async Telegram connection test failed")
-                return 1
-        except Exception as e:
-            logger.error(f"❌ Async test error: {e}")
-            return 1
-        
-        logger.info("=" * 60)
-        logger.info("✅ ALL TESTS PASSED! Bot should work correctly.")
-        logger.info("💡 Next steps:")
-        logger.info("   - Deploy the final bot version")
-        logger.info("   - Monitor Railway logs")
-        logger.info("   - Test by sending /start to your bot")
-        
+        # Run the async main function
+        return asyncio.run(main_async())
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot stopped by user")
         return 0
-        
     except Exception as e:
-        logger.error(f"❌ Comprehensive debug failed: {e}")
+        logger.error(f"❌ Unexpected error in main: {e}", exc_info=True)
         return 1
 
 if __name__ == '__main__':
-    result = main()
-    sys.exit(result)
+    sys.exit(main())
