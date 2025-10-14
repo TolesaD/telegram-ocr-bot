@@ -1,7 +1,9 @@
-FROM python:3.11-slim
+FROM ubuntu:22.04
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
     tesseract-ocr \
     tesseract-ocr-eng \
     tesseract-ocr-spa \
@@ -12,7 +14,6 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-rus \
     tesseract-ocr-jpn \
     tesseract-ocr-kor \
-    tesseract-ocr-chi-sim \
     tesseract-ocr-ara \
     tesseract-ocr-hin \
     tesseract-ocr-tur \
@@ -23,8 +24,8 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "bot.py"]
+CMD ["python3", "bot.py"]
