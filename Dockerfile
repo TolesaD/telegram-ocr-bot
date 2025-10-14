@@ -19,9 +19,6 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create python symlink
-RUN ln -s /usr/local/bin/python3 /usr/local/bin/python
-
 WORKDIR /app
 
 COPY requirements.txt .
