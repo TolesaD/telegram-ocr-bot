@@ -70,14 +70,37 @@ def validate_production_environment():
     """Validate production environment variables"""
     logger.info("🔍 Validating production environment...")
     
-    # Temporary hardcoded solution
-    BOT_TOKEN = os.getenv('BOT_TOKEN') or "8440657831:AAG533s__F3j12BdUCRdUzP0XT8h1W9cssc"
+    # Debug: List all environment variables (safely)
+    all_env_vars = list(os.environ.keys())
+    logger.info(f"🔍 Available environment variables: {len(all_env_vars)}")
     
-    if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN not found")
+    # Log some key environment variables (without sensitive values)
+    for var in all_env_vars:
+        if 'BOT' in var or 'TOKEN' in var or 'MONGODB' in var or 'ADMIN' in var:
+            value = os.getenv(var, '')
+            if value:
+                logger.info(f"🔍 {var}: {value[:5]}...{value[-5:]}")
+            else:
+                logger.info(f"🔍 {var}: [EMPTY]")
+    
+    required_vars = ['BOT_TOKEN']
+    missing_vars = []
+    
+    for var in required_vars:
+        value = os.getenv(var)
+        if not value:
+            missing_vars.append(var)
+            logger.error(f"❌ {var}: NOT FOUND")
+        else:
+            logger.info(f"✅ {var}: FOUND (length: {len(value)})")
+    
+    if missing_vars:
+        logger.error(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
         return False
     
-    logger.info(f"✅ BOT_TOKEN: FOUND (length: {len(BOT_TOKEN)})")
+    # Log configuration (safely)
+    bot_token = os.getenv('BOT_TOKEN', '')
+    logger.info(f"✅ BOT_TOKEN: {bot_token[:10]}...{bot_token[-10:]}")
     logger.info(f"✅ Database: {'MongoDB' if os.getenv('MONGODB_URI') else 'Production Mock'}")
     logger.info(f"✅ Support: {ProductionConfig.SUPPORT_EMAIL}")
     logger.info(f"✅ Channel: {ProductionConfig.CHANNEL}")
@@ -143,19 +166,6 @@ async def test_production_connection(application):
         return False
     except Exception as e:
         logger.error(f"❌ Bot connection failed: {e}")
-        
-        # Debug: Try a direct HTTP request to see the exact error
-        import aiohttp
-        try:
-            async with aiohttp.ClientSession() as session:
-                url = f"https://api.telegram.org/bot{application.bot.token}/getMe"
-                async with session.get(url) as response:
-                    logger.info(f"🔍 Direct API call - Status: {response.status}")
-                    response_text = await response.text()
-                    logger.info(f"🔍 Direct API response: {response_text}")
-        except Exception as http_error:
-            logger.error(f"🔍 Direct API call failed: {http_error}")
-        
         return False
 
 def setup_production_handlers(application):
@@ -239,8 +249,7 @@ async def production_main():
             logger.error("❌ Production environment validation failed")
             return 1
         
-        # Use hardcoded token as fallback
-        BOT_TOKEN = os.getenv('BOT_TOKEN') or "8440657831:AAG533s__F3j12BdUCRdUzP0XT8h1W9cssc"
+        BOT_TOKEN = os.getenv('BOT_TOKEN')
         if not BOT_TOKEN:
             logger.error("❌ BOT_TOKEN not found")
             return 1
@@ -254,11 +263,10 @@ async def production_main():
         # Store database in bot_data for handlers to access
         application.bot_data['db'] = db
         
-        # Skip connection test temporarily
-        logger.info("🔧 Skipping connection test for now...")
-        # if not await test_production_connection(application):
-        #     logger.error("❌ Production connection test failed")
-        #     return 1
+        # Test production connection
+        if not await test_production_connection(application):
+            logger.error("❌ Production connection test failed")
+            return 1
         
         # Setup production handlers
         if not setup_production_handlers(application):
@@ -280,7 +288,6 @@ async def production_main():
         # Production ready message
         logger.info("🎉" + "="*60)
         logger.info("✅ PRODUCTION BOT IS NOW LIVE ON RAILWAY!")
-        logger.info("🔧 Connection test was skipped - bot may still work")
         logger.info(f"📊 Max concurrent users: {ProductionConfig.MAX_CONCURRENT_USERS}")
         logger.info(f"⏱️ Request timeout: {ProductionConfig.REQUEST_TIMEOUT}s")
         logger.info(f"📸 Max image size: {ProductionConfig.MAX_IMAGE_SIZE // 1024 // 1024}MB")
