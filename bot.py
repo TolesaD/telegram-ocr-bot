@@ -32,6 +32,12 @@ def validate_environment():
     BOT_TOKEN = os.getenv('BOT_TOKEN')
     if not BOT_TOKEN:
         logger.error("❌ BOT_TOKEN environment variable is not set!")
+        logger.error("💡 Please set BOT_TOKEN in Railway environment variables")
+        
+        # Debug: Show all available environment variables (excluding sensitive ones)
+        env_vars = {k: v for k, v in os.environ.items() if 'TOKEN' not in k and 'KEY' not in k and 'SECRET' not in k and 'PASSWORD' not in k}
+        logger.info(f"📋 Available environment variables: {list(env_vars.keys())}")
+        
         return False
     
     logger.info(f"✅ BOT_TOKEN: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
@@ -45,6 +51,10 @@ def validate_environment():
     
     SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'tolesadebushe9@gmail.com')
     logger.info(f"✅ SUPPORT_EMAIL: {SUPPORT_EMAIL}")
+    
+    # Check if running on Railway
+    if 'RAILWAY_ENVIRONMENT' in os.environ:
+        logger.info(f"✅ Running on Railway: {os.getenv('RAILWAY_ENVIRONMENT')}")
     
     return True
 
@@ -197,13 +207,21 @@ async def main_async():
 
 def main():
     """Main function to start the bot"""
-    # Load environment variables for local development
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-        logger.info("✅ Loaded environment variables from .env file")
-    except ImportError:
-        logger.info("ℹ️ python-dotenv not available, using system environment variables")
+    # Only load .env file if we're not on Railway and the file exists
+    is_railway = 'RAILWAY_ENVIRONMENT' in os.environ
+    has_dotenv = os.path.exists('.env')
+    
+    if not is_railway and has_dotenv:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            logger.info("✅ Loaded environment variables from .env file (local development)")
+        except ImportError:
+            logger.info("ℹ️ python-dotenv not available, using system environment variables")
+    elif is_railway:
+        logger.info("🚄 Running on Railway - using system environment variables")
+    else:
+        logger.info("ℹ️ Using system environment variables")
     
     # Set up proper event loop policy for Windows
     if sys.platform == 'win32':
