@@ -24,5 +24,5 @@ A powerful Telegram bot that converts images to text using OCR technology with m
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/telegram-ocr-bot.git
+git clone https://github.com/TolesaD/telegram-ocr-bot.git
 cd telegram-ocr-bot
