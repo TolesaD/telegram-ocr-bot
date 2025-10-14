@@ -1,9 +1,7 @@
-FROM ubuntu:22.04
+FROM python:3.10-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
     tesseract-ocr \
     tesseract-ocr-eng \
     tesseract-ocr-spa \
@@ -21,11 +19,15 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Create python symlink
+RUN ln -s /usr/local/bin/python3 /usr/local/bin/python
+
 WORKDIR /app
 
 COPY requirements.txt .
+
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python3", "bot.py"]
+CMD ["python", "bot.py"]
