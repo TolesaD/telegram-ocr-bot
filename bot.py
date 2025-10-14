@@ -325,9 +325,13 @@ async def production_main():
 
 def main():
     """Production entry point"""
-    # Remove this line - don't load .env in production
-    # from dotenv import load_dotenv
-    # load_dotenv()
+    # Load .env file only in development (not in Railway production)
+    if not os.getenv('RAILWAY_ENVIRONMENT') and not os.getenv('RAILWAY_SERVICE_NAME'):
+        from dotenv import load_dotenv
+        load_dotenv()
+        logger.info("🔧 Development mode: Loaded .env file")
+    else:
+        logger.info("🚀 Production mode: Using system environment variables")
     
     # Windows compatibility
     if sys.platform == 'win32':

@@ -1,7 +1,12 @@
 import os
-# Remove this line - don't load .env in production
-# from dotenv import load_dotenv
-# load_dotenv()
+
+# Load .env file only in development (not in Railway production)
+if not os.getenv('RAILWAY_ENVIRONMENT') and not os.getenv('RAILWAY_SERVICE_NAME'):
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("🔧 Development mode: Loaded .env file")
+else:
+    print("🚀 Production mode: Using system environment variables")
 
 # Bot Configuration
 BOT_TOKEN = os.getenv('BOT_TOKEN')
