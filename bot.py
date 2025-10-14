@@ -308,8 +308,9 @@ async def production_main():
 
 def main():
     """Production entry point"""
-    from dotenv import load_dotenv
-    load_dotenv()
+    # Remove this line - don't load .env in production
+    # from dotenv import load_dotenv
+    # load_dotenv()
     
     # Windows compatibility
     if sys.platform == 'win32':

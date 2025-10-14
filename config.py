@@ -1,7 +1,7 @@
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+# Remove this line - don't load .env in production
+# from dotenv import load_dotenv
+# load_dotenv()
 
 # Bot Configuration
 BOT_TOKEN = os.getenv('BOT_TOKEN')
