@@ -18,17 +18,22 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Debug: Log all environment variables (for debugging)
-logger.info("🔍 Checking environment variables...")
-env_vars_to_check = ['BOT_TOKEN', 'MONGODB_URI', 'SUPPORT_EMAIL', 'CHANNEL', 'ADMIN_IDS']
-for var in env_vars_to_check:
-    value = os.getenv(var)
-    if value:
-        logger.info(f"✅ {var}: Found (length: {len(value)})")
-    else:
-        logger.warning(f"❌ {var}: Not found")
+# Fallback values if environment variables are not set
+FALLBACK_VALUES = {
+    'BOT_TOKEN': '8440918851:AAHFEBmOrZbQjPC7jRu6n9kbez1IxwuwbN8',
+    'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/?retryWrites=true&w=majority',
+    'SUPPORT_EMAIL': 'tolesadebushe9@gmail.com',
+    'CHANNEL': '@ImageToTextConverter',
+    'ADMIN_IDS': '417079598'
+}
 
-# Import database FIRST to catch any import errors
+# Set fallback values if environment variables are missing
+for key, fallback_value in FALLBACK_VALUES.items():
+    if not os.getenv(key):
+        os.environ[key] = fallback_value
+        logger.warning(f"⚠️ Using fallback for {key}")
+
+# Import database
 try:
     from database.mongodb import db
     logger.info("✅ Database imported successfully")
@@ -91,12 +96,11 @@ async def error_handler(update: Update, context):
 def main():
     """Main function"""
     try:
-        # Get bot token - with multiple fallbacks
+        # Get bot token
         BOT_TOKEN = os.getenv('BOT_TOKEN')
         
         if not BOT_TOKEN:
-            logger.error("❌ BOT_TOKEN not found in environment variables")
-            logger.error("💡 Please check Railway Variables tab and ensure BOT_TOKEN is set")
+            logger.error("❌ BOT_TOKEN not found")
             return
         
         logger.info(f"✅ BOT_TOKEN found: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
