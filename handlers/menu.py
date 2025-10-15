@@ -36,6 +36,21 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     
     user_id = update.effective_user.id
+
+    from telegram import MenuButtonCommands
+
+async def set_main_menu_commands(application):
+    """Set main menu commands that appear in the bottom left"""
+    commands = [
+        ("start", "🚀 Start/Restart Bot"),
+        ("menu", "📱 Main Menu"),
+        ("help", "❓ Help & Support"),
+        ("settings", "⚙️ Settings"),
+        ("stats", "📊 Statistics")
+    ]
+    
+    await application.bot.set_my_commands(commands)
+    await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     
     # Get user settings
     try:

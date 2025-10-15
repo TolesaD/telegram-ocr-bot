@@ -4,6 +4,7 @@ import asyncio
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler
 from telegram import Update
 from dotenv import load_dotenv
+from handlers.menu import set_main_menu_commands
 
 # Configure logging for Railway
 logging.basicConfig(
