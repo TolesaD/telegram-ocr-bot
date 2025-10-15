@@ -55,29 +55,36 @@ class TextFormatter:
     
     @staticmethod
     def format_html(text):
-        """Enhanced HTML formatting with better structure"""
+        """Enhanced HTML formatting with Telegram-compatible tags only"""
         if not text:
             return ""
         
         try:
-            # Escape HTML entities
+            # Escape HTML entities first
             escaped_text = html.escape(text)
             
-            # Enhanced line processing
+            # Enhanced line processing - use Telegram supported tags only
             lines = escaped_text.split('\n')
             html_lines = []
             
             for line in lines:
-                if line.strip():
-                    # Preserve paragraph structure
-                    html_lines.append(f"<p>{line}</p>")
+                line = line.strip()
+                if line:
+                    # Use <b>, <i>, <u>, <code>, <pre> tags only (Telegram supported)
+                    # For paragraphs, we'll use bold for emphasis
+                    if len(line) > 50:  # Long lines as paragraphs
+                        html_lines.append(f"<b>{line}</b>")
+                    else:
+                        html_lines.append(f"<i>{line}</i>")
                 else:
                     html_lines.append("<br>")
             
             formatted_text = '\n'.join(html_lines)
             
-            return f"<div class='ocr-text'>{formatted_text}</div>"
+            # Use <pre> tag for code-like formatting (Telegram supports this)
+            return f"<pre>{formatted_text}</pre>"
         except:
+            # Fallback to plain text in <pre> tags
             return f"<pre>{html.escape(text)}</pre>"
     
     @staticmethod

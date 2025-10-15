@@ -14,6 +14,25 @@ SUPPORTED_LANGUAGES = {
     'amharic': 'amh'
 }
 
+# Language display names
+LANGUAGE_DISPLAY_NAMES = {
+    'english': 'English', 'spanish': 'Spanish', 'french': 'French', 'german': 'German',
+    'italian': 'Italian', 'portuguese': 'Portuguese', 'russian': 'Russian', 
+    'chinese_simplified': 'Chinese', 'japanese': 'Japanese', 'korean': 'Korean',
+    'arabic': 'Arabic', 'hindi': 'Hindi', 'turkish': 'Turkish', 'dutch': 'Dutch',
+    'swedish': 'Swedish', 'polish': 'Polish', 'ukrainian': 'Ukrainian', 'greek': 'Greek',
+    'amharic': 'Amharic'
+}
+
+# Language groups
+LANGUAGE_GROUPS = {
+    'european': ['english', 'spanish', 'french', 'german', 'italian', 'portuguese', 'dutch', 'swedish', 'polish', 'greek'],
+    'asian': ['chinese_simplified', 'japanese', 'korean'],
+    'middle_eastern': ['arabic', 'turkish'],
+    'african': ['amharic'],
+    'eastern_european': ['russian', 'ukrainian']
+}
+
 # Performance Settings
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB for Railway
 PROCESSING_TIMEOUT = 45  # seconds

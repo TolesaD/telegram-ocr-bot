@@ -51,6 +51,13 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang_code = config.SUPPORTED_LANGUAGES.get(language, 'eng')
     language_display = config.LANGUAGE_DISPLAY_NAMES.get(language, language)
     
+    # Check if language is available in Tesseract
+    available_langs = ocr_processor.get_tesseract_languages()
+    if lang_code not in available_langs:
+        logger.warning(f"Language {lang_code} not available, using English")
+        language_display = "English"
+        lang_code = 'eng'
+    
     # Get the best quality photo
     photo = message.photo[-1]
     
@@ -304,6 +311,7 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"✅ Successfully reformatted to {format_type}")
         except Exception as format_error:
             logger.warning(f"Formatting failed, using plain text: {format_error}")
+            # Use plain text without parse_mode
             await query.edit_message_text(
                 f"📝 **Extracted Text** ({format_type.upper()} - plain version)\n\n{original_text}",
                 reply_markup=reply_markup,
@@ -314,14 +322,15 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Error in reformat: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         
-        # Ultimate fallback
+        # Ultimate fallback - show original text
         try:
             original_text = context.user_data.get(f'original_text_{original_message_id}', 'No text available')
             await query.edit_message_text(
                 f"❌ Error reformatting text. Showing original:\n\n{original_text}",
                 parse_mode=None
             )
-        except:
+        except Exception as final_error:
+            logger.error(f"Final fallback failed: {final_error}")
             await query.edit_message_text("❌ Error reformatting text. Please process the image again.")
 
 # OCR callback handler
