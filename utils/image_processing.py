@@ -17,8 +17,6 @@ class OCRProcessor:
     def __init__(self):
         self.engines = {}
         self.cache = {}  # Simple cache for frequent languages
-        self.tesseract_available = False
-        self.tesseract_config = '--oem 3 --psm 6 -c preserve_interword_spaces=1'  # DEFAULT CONFIG
         self.setup_engines()
     
     def setup_engines(self):
@@ -31,7 +29,6 @@ class OCRProcessor:
                     'priority': 1,
                     'languages': self.get_tesseract_languages()
                 }
-                self.tesseract_available = True
             
             logger.info("🚀 Enhanced OCR Engines loaded: %s", list(self.engines.keys()))
             
@@ -69,21 +66,6 @@ class OCRProcessor:
         start_time = time.time()
         
         try:
-            # If Tesseract is not available, return mock text
-            if not self.tesseract_available:
-                mock_text = (
-                    "🔧 *OCR Engine Not Available*\n\n"
-                    "Tesseract OCR is not installed on this server.\n\n"
-                    "📝 *Mock Response for Testing:*\n"
-                    "This is sample extracted text that would normally be obtained from your image. "
-                    "For production use, please install Tesseract OCR system dependencies.\n\n"
-                    "💡 *For Railway Deployment:*\n"
-                    "• Add Tesseract to your Dockerfile\n"
-                    "• Install system dependencies\n"
-                    "• Use OCR-as-a-service APIs"
-                )
-                return mock_text
-            
             # Convert language name to code with caching
             lang_code = self.get_language_code(language)
             logger.info("🔤 Using language: %s -> %s", language, lang_code)
@@ -97,8 +79,7 @@ class OCRProcessor:
             
         except Exception as e:
             logger.error("OCR processing failed: %s", e)
-            # Fallback to mock text for testing
-            return "📝 This is a mock text response since OCR processing failed. Please check server logs for details."
+            raise
     
     def get_language_code(self, language_name):
         """Convert language name to Tesseract code with extended support"""
@@ -108,17 +89,16 @@ class OCRProcessor:
             'chinese_simplified': 'chi_sim', 'japanese': 'jpn', 'korean': 'kor',
             'arabic': 'ara', 'hindi': 'hin', 'turkish': 'tur', 'dutch': 'nld',
             'swedish': 'swe', 'polish': 'pol', 'ukrainian': 'ukr', 'greek': 'ell',
-            'amharic': 'amh'
+            'amharic': 'amh', 'bulgarian': 'bul', 'czech': 'ces', 'danish': 'dan',
+            'finnish': 'fin', 'hebrew': 'heb', 'hungarian': 'hun', 'indonesian': 'ind',
+            'norwegian': 'nor', 'romanian': 'ron', 'serbian': 'srp', 'slovak': 'slk',
+            'slovenian': 'slv', 'thai': 'tha', 'vietnamese': 'vie'
         }
         
         return language_map.get(language_name.lower(), 'eng')
     
     async def extract_with_tesseract_enhanced(self, image_bytes, lang_code):
         """Enhanced Tesseract extraction with multiple optimizations"""
-        # If Tesseract is not available, return mock text
-        if not self.tesseract_available:
-            return "🔧 OCR Engine Not Available\n\nTesseract OCR is not installed on this server."
-
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             thread_pool,
@@ -128,7 +108,7 @@ class OCRProcessor:
         )
     
     def _tesseract_extract_enhanced(self, image_bytes, lang_code):
-        """Enhanced Tesseract extraction that preserves original formatting"""
+        """Enhanced Tesseract extraction with multiple preprocessing techniques"""
         try:
             # Enhanced image preprocessing
             processed_image = self.enhanced_preprocess_image(image_bytes)
@@ -139,38 +119,63 @@ class OCRProcessor:
                 logger.warning("Language %s not available, using English", lang_code)
                 lang_code = 'eng'
             
-            # Use configuration that preserves layout and formatting
-            preserve_config = '--oem 3 --psm 6 -c preserve_interword_spaces=1 -c tessedit_create_text=1'
+            # Try multiple PSM modes with timeout
+            psm_modes = [6, 3, 4, 8, 11, 13]  # Added more modes for better accuracy
             
-            try:
-                # First try: Get detailed text with layout information
-                data = pytesseract.image_to_data(
-                    processed_image,
-                    lang=lang_code,
-                    config=preserve_config,
-                    output_type=pytesseract.Output.DICT
-                )
-                
-                # Reconstruct text with proper spacing and line breaks
-                reconstructed_text = self.reconstruct_text_with_layout(data)
-                
-                if reconstructed_text and len(reconstructed_text.strip()) > 10:
-                    logger.info("✅ Successfully extracted text with layout preservation")
-                    return reconstructed_text
+            best_text = ""
+            best_confidence = 0
+            
+            for psm_mode in psm_modes:
+                try:
+                    config = f'--oem 3 --psm {psm_mode} -c tessedit_do_invert=0'
                     
-            except Exception as e:
-                logger.warning(f"Layout preservation failed: {e}")
+                    # Get both text and confidence
+                    data = pytesseract.image_to_data(
+                        processed_image,
+                        lang=lang_code,
+                        config=config,
+                        output_type=pytesseract.Output.DICT
+                    )
+                    
+                    # Calculate average confidence
+                    confidences = [int(conf) for conf in data['conf'] if int(conf) > 0]
+                    avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+                    
+                    # Extract text
+                    text = ' '.join([word for i, word in enumerate(data['text']) 
+                                   if int(data['conf'][i]) > 60])
+                    
+                    cleaned_text = self.enhanced_clean_text(text)
+                    
+                    # Choose best result based on confidence and text length
+                    if (avg_confidence > best_confidence and 
+                        len(cleaned_text.strip()) > len(best_text.strip())):
+                        best_text = cleaned_text
+                        best_confidence = avg_confidence
+                        
+                    # Early exit if we have high confidence
+                    if avg_confidence > 85 and len(cleaned_text.strip()) > 10:
+                        logger.info("🎯 High confidence (%d%%) with PSM %d", avg_confidence, psm_mode)
+                        return cleaned_text
+                        
+                except Exception as e:
+                    logger.debug("PSM mode %d failed: %s", psm_mode, str(e))
+                    continue
             
-            # Fallback: Simple extraction with better formatting
+            # Return best result found
+            if best_text and len(best_text.strip()) > 5:
+                logger.info("🏆 Using best result with %d%% confidence", best_confidence)
+                return best_text
+            
+            # Fallback to simple extraction
             text = pytesseract.image_to_string(
                 processed_image,
                 lang=lang_code,
-                config=preserve_config,
+                config=self.tesseract_config,
                 timeout=30
             )
             
-            # Enhanced cleaning that preserves paragraphs and spacing
-            cleaned_text = self.preserve_formatting_clean_text(text)
+            cleaned_text = self.enhanced_clean_text(text)
             
             if not cleaned_text:
                 return "🔍 No readable text found. Please try:\n• Clearer, well-lit images\n• Better focus and contrast\n• Straight, non-blurry photos\n• Crop to text area"
@@ -180,78 +185,93 @@ class OCRProcessor:
         except Exception as e:
             raise Exception(f"Tesseract error: {e}")
     
-    def reconstruct_text_with_layout(self, data):
-        """Reconstruct text preserving original layout and formatting"""
+    def enhanced_preprocess_image(self, image_bytes):
+        """Advanced image preprocessing for better OCR accuracy"""
         try:
-            lines = {}
-            current_line_num = 0
-            current_line_text = ""
-            last_bottom = 0
+            # Open image
+            image = Image.open(io.BytesIO(image_bytes))
             
-            for i in range(len(data['text'])):
-                text = data['text'][i].strip()
-                if not text:
-                    continue
-                
-                conf = int(data['conf'][i])
-                if conf < 30:  # Low confidence, skip
-                    continue
-                
-                top = data['top'][i]
-                bottom = top + data['height'][i]
-                
-                # Check if this is a new line
-                if abs(top - last_bottom) > data['height'][i] * 0.5:
-                    if current_line_text:
-                        lines[current_line_num] = current_line_text.strip()
-                        current_line_num += 1
-                    current_line_text = text
-                    last_bottom = bottom
-                else:
-                    # Same line, add space between words
-                    if current_line_text:
-                        current_line_text += " " + text
-                    else:
-                        current_line_text = text
-                    last_bottom = max(last_bottom, bottom)
+            # Store original dimensions
+            original_width, original_height = image.size
             
-            # Add the last line
-            if current_line_text:
-                lines[current_line_num] = current_line_text.strip()
+            # Optimize image size for OCR (better performance/accuracy balance)
+            max_dim = 1600  # Increased for better detail
+            if max(image.size) > max_dim:
+                scale = max_dim / max(image.size)
+                new_width = int(image.width * scale)
+                new_height = int(image.height * scale)
+                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                logger.debug("🖼️ Resized image from %dx%d to %dx%d", 
+                           original_width, original_height, new_width, new_height)
             
-            # Join lines with proper line breaks
-            result = '\n'.join([lines[key] for key in sorted(lines.keys())])
+            # Convert to grayscale
+            if image.mode != 'L':
+                image = image.convert('L')
             
-            return result if result.strip() else None
+            # Multiple enhancement techniques
+            # 1. Contrast enhancement
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(2.5)  # Increased contrast
+            
+            # 2. Sharpness enhancement
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(2.5)  # Increased sharpness
+            
+            # 3. Brightness adjustment
+            enhancer = ImageEnhance.Brightness(image)
+            image = enhancer.enhance(1.1)
+            
+            # 4. Noise reduction with multiple techniques
+            image = image.filter(ImageFilter.MedianFilter(size=3))
+            image = image.filter(ImageFilter.SMOOTH)
+            
+            # 5. Edge enhancement for text boundaries
+            image = image.filter(ImageFilter.EDGE_ENHANCE)
+            
+            # 6. Auto contrast for better text visibility
+            image = ImageOps.autocontrast(image, cutoff=2)
+            
+            return image
             
         except Exception as e:
-            logger.error(f"Error reconstructing text layout: {e}")
-            return None
+            logger.error("Enhanced preprocessing error: %s", e)
+            # Fallback to basic processing
+            try:
+                image = Image.open(io.BytesIO(image_bytes))
+                if image.mode != 'L':
+                    image = image.convert('L')
+                return image
+            except:
+                return Image.open(io.BytesIO(image_bytes))
     
-    def preserve_formatting_clean_text(self, text):
-        """Clean text while preserving original formatting, paragraphs, and spacing"""
+    def enhanced_clean_text(self, text):
+        """Advanced text cleaning with multiple techniques"""
         if not text:
             return ""
         
-        # Split into lines and preserve meaningful whitespace
-        lines = text.split('\n')
-        cleaned_lines = []
+        # Remove extra whitespace and normalize
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
         
+        # Advanced filtering
+        filtered_lines = []
         for line in lines:
-            line = line.rstrip()  # Remove trailing whitespace but keep leading
-            if line.strip():  # Keep non-empty lines
-                cleaned_lines.append(line)
-            else:
-                # Preserve empty lines that separate paragraphs
-                if cleaned_lines and cleaned_lines[-1] != "":
-                    cleaned_lines.append("")
+            # Remove lines that are too short or likely noise
+            if len(line) < 2:
+                continue
+                
+            # Check for meaningful content (letters/numbers ratio)
+            alpha_count = sum(c.isalpha() for c in line)
+            digit_count = sum(c.isdigit() for c in line)
+            total_chars = len(line)
+            
+            # Keep lines with reasonable text content
+            if (alpha_count + digit_count) / total_chars > 0.3:  # At least 30% alphanumeric
+                # Remove common OCR artifacts
+                line = self.remove_ocr_artifacts(line)
+                filtered_lines.append(line)
         
-        # Remove trailing empty lines
-        while cleaned_lines and cleaned_lines[-1] == "":
-            cleaned_lines.pop()
-        
-        # Join with original line breaks
-        result = '\n'.join(cleaned_lines)
+        # Join with proper spacing
+        result = '\n'.join(filtered_lines)
         
         # Final validation
         if len(result.strip()) < 10:
