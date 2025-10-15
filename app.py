@@ -5,6 +5,19 @@ from telegram.ext import Application, MessageHandler, filters, CommandHandler, C
 from telegram import Update
 from dotenv import load_dotenv
 
+# TEMPORARY: Hardcode values for Railway testing
+HARDCODED_VALUES = {
+    'BOT_TOKEN': '8440918851:AAHFEBmOrZbQjPC7jRu6n9kbez1IxwuwbN8',
+    'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/?retryWrites=true&w=majority',
+    'SUPPORT_EMAIL': 'tolesadebushe9@gmail.com',
+    'CHANNEL': '@ImageToTextConverter',
+    'ADMIN_IDS': '417079598'
+}
+
+# Override environment variables
+for key, value in HARDCODED_VALUES.items():
+    os.environ[key] = value
+
 # Configure logging for Railway
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -15,18 +28,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+logger.info("🚨 USING TEMPORARY HARDCODED VALUES FOR RAILWAY TESTING")
+
 # Load environment variables
 load_dotenv()
-
-# Debug: Log all environment variables (for debugging)
-logger.info("🔍 Checking environment variables...")
-env_vars_to_check = ['BOT_TOKEN', 'MONGODB_URI', 'SUPPORT_EMAIL', 'CHANNEL', 'ADMIN_IDS']
-for var in env_vars_to_check:
-    value = os.getenv(var)
-    if value:
-        logger.info(f"✅ {var}: Found (length: {len(value)})")
-    else:
-        logger.warning(f"❌ {var}: Not found")
 
 # Import database FIRST to catch any import errors
 try:
@@ -91,12 +96,11 @@ async def error_handler(update: Update, context):
 def main():
     """Main function"""
     try:
-        # Get bot token - with multiple fallbacks
+        # Get bot token
         BOT_TOKEN = os.getenv('BOT_TOKEN')
         
         if not BOT_TOKEN:
-            logger.error("❌ BOT_TOKEN not found in environment variables")
-            logger.error("💡 Please check Railway Variables tab and ensure BOT_TOKEN is set")
+            logger.error("❌ BOT_TOKEN not found")
             return
         
         logger.info(f"✅ BOT_TOKEN found: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
