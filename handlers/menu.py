@@ -359,7 +359,7 @@ async def handle_convert_image(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode='Markdown'
     )
 
-# ADD THIS MISSING FUNCTION:
+# Main callback handler that routes all menu callbacks
 async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle all menu-related callbacks"""
     query = update.callback_query
@@ -377,9 +377,6 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_settings_menu(update, context)
     elif callback_data == "statistics":
         await show_statistics(update, context)
-    elif callback_data == "help":
-        from handlers.help import help_callback
-        await help_callback(update, context)
     elif callback_data == "change_language":
         await show_language_menu(update, context)
     elif callback_data == "change_format":

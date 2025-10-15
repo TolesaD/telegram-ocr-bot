@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.mongodb import db
-import config  # CHANGED FROM config_optimized to config
+import config
 import logging
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ async def handle_help_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         support_text = (
             f"📧 *Contact Support*\n\n"
             f"For assistance, please email:\n"
-            f"`{config.Config.SUPPORT_EMAIL}`\n\n"
+            f"`{config.SUPPORT_EMAIL}`\n\n"
             f"Please include:\n"
             f"• Your username\n"
             f"• Description of the issue\n"
