@@ -14,7 +14,7 @@ class MongoDB:
         self.connect()
     
     def connect(self):
-        """Connect to MongoDB with SSL handling"""
+        """Connect to MongoDB - Railway optimized"""
         mongodb_uri = os.getenv('MONGODB_URI')
         
         if not mongodb_uri:
@@ -23,23 +23,37 @@ class MongoDB:
             return
         
         try:
-            # Try connection with TLS
+            # Railway environment - use TLS
             self.client = MongoClient(
                 mongodb_uri,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=10000,
+                serverSelectionTimeoutMS=10000,
+                connectTimeoutMS=15000,
                 socketTimeoutMS=30000,
-                tls=True,
-                tlsAllowInvalidCertificates=True
+                retryWrites=True,
+                retryReads=True
             )
             self.client.admin.command('ping')
             self.db = self.client.get_database()
-            logger.info("✅ MongoDB connected successfully (with TLS)")
+            logger.info("✅ MongoDB connected successfully on Railway")
             self.is_mock = False
+            
+            # Create indexes
+            self._create_indexes()
+            
         except Exception as e:
             logger.error(f"❌ MongoDB connection failed: {e}")
             logger.info("🔄 Falling back to mock database")
             self.setup_mock_database()
+    
+    def _create_indexes(self):
+        """Create database indexes"""
+        try:
+            if not self.is_mock:
+                self.db.users.create_index("user_id", unique=True)
+                self.db.requests.create_index([("user_id", 1), ("timestamp", -1)])
+                logger.info("✅ Database indexes created")
+        except Exception as e:
+            logger.error(f"Error creating indexes: {e}")
     
     def setup_mock_database(self):
         """Setup mock database"""
@@ -127,5 +141,5 @@ class MongoDB:
             logger.error(f"Error getting user stats: {e}")
             return {'total_requests': 0, 'recent_requests': []}
 
-# ⚠️ CRITICAL: This line must be at the end to create the db instance
+# Database instance
 db = MongoDB()

@@ -5,17 +5,30 @@ from telegram.ext import Application, MessageHandler, filters, CommandHandler, C
 from telegram import Update
 from dotenv import load_dotenv
 
-# Configure logging FIRST
+# Configure logging for Railway
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler()  # Railway captures stdout
+    ]
 )
 logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
-# Import database FIRST to catch any import errors
+# Import handlers
+from handlers.start import start_command, handle_membership_check, force_check_membership
+from handlers.help import help_command, handle_help_callback
+from handlers.ocr import handle_image, handle_reformat
+from handlers.menu import (
+    show_main_menu, show_settings_menu, show_statistics,
+    handle_convert_image, show_language_menu, show_format_menu,
+    handle_language_change, handle_format_change, show_language_group
+)
+
+# Import database
 try:
     from database.mongodb import db
     logger.info("✅ Database imported successfully")
@@ -56,20 +69,9 @@ except ImportError as e:
     db = MockDB()
     logger.info("✅ Using mock database")
 
-# Now import handlers
-try:
-    from handlers.start import start_command, handle_membership_check, force_check_membership
-    from handlers.help import help_command, handle_help_callback
-    from handlers.ocr import handle_image, handle_reformat
-    from handlers.menu import (
-        show_main_menu, show_settings_menu, show_statistics,
-        handle_convert_image, show_language_menu, show_format_menu,
-        handle_language_change, handle_format_change, show_language_group
-    )
-    logger.info("✅ All handlers imported successfully")
-except ImportError as e:
-    logger.error(f"❌ Handler import failed: {e}")
-    raise
+async def error_handler(update: Update, context):
+    """Handle errors gracefully"""
+    logger.error(f"Update {update} caused error {context.error}")
 
 def main():
     """Main function"""
@@ -80,7 +82,9 @@ def main():
             logger.error("❌ BOT_TOKEN not found in environment variables")
             return
         
-        logger.info("🤖 Starting bot initialization...")
+        # Railway-specific logging
+        logger.info("🚄 Starting bot on Railway...")
+        logger.info("✅ Environment: RAILWAY")
         
         # Create application
         application = Application.builder().token(BOT_TOKEN).build()
@@ -118,13 +122,17 @@ def main():
         for pattern, handler in callback_patterns:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
         
+        # Add error handler
+        application.add_error_handler(error_handler)
+        
         logger.info("✅ All handlers registered")
         logger.info("🚀 Starting bot polling...")
         
         # Start the bot
         application.run_polling(
             drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
+            allowed_updates=Update.ALL_TYPES,
+            close_loop=False  # Important for Railway
         )
         
     except Exception as e:
