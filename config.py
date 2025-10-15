@@ -1,76 +1,47 @@
 import os
+from dotenv import load_dotenv
 
-# Load .env file only in development (not in Railway production)
-if not os.getenv('RAILWAY_ENVIRONMENT') and not os.getenv('RAILWAY_SERVICE_NAME'):
-    from dotenv import load_dotenv
-    load_dotenv()
-    print("🔧 Development mode: Loaded .env file")
-else:
-    print("🚀 Production mode: Using system environment variables")
+# Load environment variables
+load_dotenv()
 
-# Bot Configuration
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-
-# MongoDB Configuration
-MONGODB_URI = os.getenv('MONGODB_URI')
-DATABASE_NAME = "ocr_bot"
-
-# Enhanced Tesseract OCR Configuration
+# Enhanced language support
 SUPPORTED_LANGUAGES = {
-    'english': 'eng',
-    'spanish': 'spa', 
-    'french': 'fra',
-    'german': 'deu',
-    'italian': 'ita',
-    'portuguese': 'por',
-    'russian': 'rus',
-    'chinese_simplified': 'chi_sim',
-    'japanese': 'jpn',
-    'korean': 'kor',
-    'arabic': 'ara',
-    'hindi': 'hin',
-    'turkish': 'tur',
-    'dutch': 'nld',
-    'swedish': 'swe',
-    'polish': 'pol',
-    'ukrainian': 'ukr',
-    'greek': 'ell',
-}
-
-# Language display names
-LANGUAGE_DISPLAY_NAMES = {
-    'english': 'English 🇺🇸',
-    'spanish': 'Spanish 🇪🇸', 
-    'french': 'French 🇫🇷',
-    'german': 'German 🇩🇪',
-    'italian': 'Italian 🇮🇹',
-    'portuguese': 'Portuguese 🇵🇹',
-    'russian': 'Russian 🇷🇺',
-    'chinese_simplified': 'Chinese Simplified 🇨🇳',
-    'japanese': 'Japanese 🇯🇵',
-    'korean': 'Korean 🇰🇷',
-    'arabic': 'Arabic 🇸🇦',
-    'hindi': 'Hindi 🇮🇳',
-    'turkish': 'Turkish 🇹🇷',
-    'dutch': 'Dutch 🇳🇱',
-    'swedish': 'Swedish 🇸🇪',
-    'polish': 'Polish 🇵🇱',
-    'ukrainian': 'Ukrainian 🇺🇦',
-    'greek': 'Greek 🇬🇷',
-}
-
-# Language groups
-LANGUAGE_GROUPS = {
-    'popular': ['english', 'spanish', 'french', 'german', 'italian'],
-    'european': ['portuguese', 'russian', 'dutch', 'swedish', 'polish', 'ukrainian', 'greek'],
-    'asian': ['chinese_simplified', 'japanese', 'korean'],
-    'middle_eastern': ['arabic', 'hindi', 'turkish']
+    'english': 'eng', 'spanish': 'spa', 'french': 'fra', 'german': 'deu',
+    'italian': 'ita', 'portuguese': 'por', 'russian': 'rus', 
+    'chinese_simplified': 'chi_sim', 'japanese': 'jpn', 'korean': 'kor',
+    'arabic': 'ara', 'hindi': 'hin', 'turkish': 'tur', 'dutch': 'nld',
+    'swedish': 'swe', 'polish': 'pol', 'ukrainian': 'ukr', 'greek': 'ell',
+    # Add more languages from the 80+ supported
+    'afrikaans': 'afr', 'albanian': 'sqi', 'amharic': 'amh', 'arabic': 'ara',
+    'armenian': 'hye', 'azerbaijani': 'aze', 'basque': 'eus', 'belarusian': 'bel',
+    'bengali': 'ben', 'bosnian': 'bos', 'bulgarian': 'bul', 'burmese': 'mya',
+    'catalan': 'cat', 'cebuano': 'ceb', 'chinese': 'chi_sim', 'croatian': 'hrv',
+    'czech': 'ces', 'danish': 'dan', 'dutch': 'nld', 'esperanto': 'epo',
+    'estonian': 'est', 'filipino': 'tgl', 'finnish': 'fin', 'french': 'fra',
+    'galician': 'glg', 'georgian': 'kat', 'german': 'deu', 'greek': 'ell',
+    'gujarati': 'guj', 'haitian': 'hat', 'hausa': 'hau', 'hebrew': 'heb',
+    'hindi': 'hin', 'hmong': 'hmn', 'hungarian': 'hun', 'icelandic': 'isl',
+    'igbo': 'ibo', 'indonesian': 'ind', 'irish': 'gle', 'italian': 'ita',
+    'japanese': 'jpn', 'javanese': 'jav', 'kannada': 'kan', 'kazakh': 'kaz',
+    'khmer': 'khm', 'korean': 'kor', 'kurdish': 'kur', 'kyrgyz': 'kir',
+    'lao': 'lao', 'latin': 'lat', 'latvian': 'lav', 'lithuanian': 'lit',
+    'luxembourgish': 'ltz', 'macedonian': 'mkd', 'malagasy': 'mlg',
+    'malay': 'msa', 'malayalam': 'mal', 'maltese': 'mlt', 'maori': 'mri',
+    'marathi': 'mar', 'mongolian': 'mon', 'nepali': 'nep', 'norwegian': 'nor',
+    'nyanja': 'nya', 'pashto': 'pus', 'persian': 'fas', 'polish': 'pol',
+    'portuguese': 'por', 'punjabi': 'pan', 'romanian': 'ron', 'russian': 'rus',
+    'samoan': 'smo', 'scots': 'sco', 'serbian': 'srp', 'sesotho': 'sot',
+    'shona': 'sna', 'sindhi': 'snd', 'sinhala': 'sin', 'slovak': 'slk',
+    'slovenian': 'slv', 'somali': 'som', 'southern': 'sot', 'sundanese': 'sun',
+    'swahili': 'swa', 'swedish': 'swe', 'tajik': 'tgk', 'tamil': 'tam',
+    'telugu': 'tel', 'thai': 'tha', 'turkish': 'tur', 'ukrainian': 'ukr',
+    'urdu': 'urd', 'uzbek': 'uzb', 'vietnamese': 'vie', 'welsh': 'cym',
+    'xhosa': 'xho', 'yiddish': 'yid', 'yoruba': 'yor', 'zulu': 'zul'
 }
 
 # Performance Settings
 MAX_IMAGE_SIZE = 15 * 1024 * 1024  # 15MB
 PROCESSING_TIMEOUT = 30  # seconds
-MAX_IMAGE_DIMENSION = 1200
 
 # Text Formatting Options
 FORMAT_OPTIONS = ['plain', 'markdown', 'html']
