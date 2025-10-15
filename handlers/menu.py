@@ -32,6 +32,9 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show settings menu with user's current settings"""
+    query = update.callback_query
+    await query.answer()
+    
     user_id = update.effective_user.id
     
     # Get user settings
@@ -63,7 +66,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Choose what you want to change:"
     )
     
-    await update.callback_query.edit_message_text(
+    await query.edit_message_text(
         settings_text,
         reply_markup=reply_markup,
         parse_mode='Markdown'
@@ -71,6 +74,9 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def show_language_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show language selection menu with organized groups"""
+    query = update.callback_query
+    await query.answer()
+    
     user_id = update.effective_user.id
     
     # Get current language
@@ -92,7 +98,7 @@ async def show_language_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Middle Eastern Languages
     keyboard.append([InlineKeyboardButton("🌐 Middle Eastern Languages", callback_data="language_group_middle_eastern")])
     
-    # African Languages - ADDED THIS
+    # African Languages
     keyboard.append([InlineKeyboardButton("🌍 African Languages", callback_data="language_group_african")])
     
     # Indian Languages
@@ -105,7 +111,7 @@ async def show_language_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     current_lang_display = config.LANGUAGE_DISPLAY_NAMES.get(current_language, current_language)
     
-    await update.callback_query.edit_message_text(
+    await query.edit_message_text(
         f"🌐 *Language Selection*\n\n"
         f"Current: {current_lang_display}\n\n"
         "Choose a language group:",
@@ -116,6 +122,8 @@ async def show_language_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def show_language_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show languages in a specific group"""
     query = update.callback_query
+    await query.answer()
+    
     group_name = query.data.replace('language_group_', '')
     
     if group_name not in config.LANGUAGE_GROUPS:
@@ -159,6 +167,8 @@ async def show_language_group(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_language_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle language change"""
     query = update.callback_query
+    await query.answer()
+    
     user_id = update.effective_user.id
     language = query.data.replace('set_language_', '')
     
@@ -193,6 +203,9 @@ async def handle_language_change(update: Update, context: ContextTypes.DEFAULT_T
 
 async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show text format selection menu"""
+    query = update.callback_query
+    await query.answer()
+    
     user_id = update.effective_user.id
     
     # Get current format
@@ -221,7 +234,7 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'html': "Text with HTML tags"
     }
     
-    await update.callback_query.edit_message_text(
+    await query.edit_message_text(
         f"📝 *Text Format Selection*\n\n"
         f"Current: {current_format.upper()}\n\n"
         f"Choose your preferred text format:\n"
@@ -235,6 +248,8 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_format_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle format change"""
     query = update.callback_query
+    await query.answer()
+    
     user_id = update.effective_user.id
     text_format = query.data.replace('set_format_', '')
     
@@ -268,6 +283,9 @@ async def handle_format_change(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show user statistics"""
+    query = update.callback_query
+    await query.answer()
+    
     user_id = update.effective_user.id
     
     try:
@@ -295,7 +313,7 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.callback_query.edit_message_text(
+        await query.edit_message_text(
             stats_text,
             reply_markup=reply_markup,
             parse_mode='Markdown'
@@ -303,7 +321,7 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         logger.error(f"Error showing statistics: {e}")
-        await update.callback_query.edit_message_text(
+        await query.edit_message_text(
             "❌ Error loading statistics",
             parse_mode='Markdown'
         )
@@ -340,3 +358,36 @@ async def handle_convert_image(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
+
+# Main callback handler that routes all menu callbacks
+async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle all menu-related callbacks"""
+    query = update.callback_query
+    await query.answer()
+    
+    callback_data = query.data
+    
+    logger.info(f"Menu callback: {callback_data}")
+    
+    if callback_data == "main_menu":
+        await show_main_menu(update, context)
+    elif callback_data == "convert_image":
+        await handle_convert_image(update, context)
+    elif callback_data == "settings":
+        await show_settings_menu(update, context)
+    elif callback_data == "statistics":
+        await show_statistics(update, context)
+    elif callback_data == "change_language":
+        await show_language_menu(update, context)
+    elif callback_data == "change_format":
+        await show_format_menu(update, context)
+    elif callback_data.startswith("language_group_"):
+        await show_language_group(update, context)
+    elif callback_data.startswith("set_language_"):
+        await handle_language_change(update, context)
+    elif callback_data.startswith("set_format_"):
+        await handle_format_change(update, context)
+    else:
+        logger.warning(f"Unknown menu callback: {callback_data}")
+        await query.edit_message_text("❌ Unknown command. Returning to main menu.")
+        await show_main_menu(update, context)

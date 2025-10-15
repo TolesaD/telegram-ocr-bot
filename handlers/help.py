@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.mongodb import db
-import config  # CHANGED FROM config_optimized to config
+import config
 import logging
 
 logger = logging.getLogger(__name__)

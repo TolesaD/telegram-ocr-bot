@@ -212,3 +212,12 @@ async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_T
             "Please join our channel and use `/start` to verify.",
             parse_mode='Markdown'
         )
+
+# Callback handler for start-related callbacks
+async def handle_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle start-related callbacks"""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "check_membership":
+        await handle_membership_check(update, context)

@@ -5,58 +5,57 @@ class TextFormatter:
     
     @staticmethod
     def format_plain(text):
-        """Format text as plain text"""
+        """Format text as plain text with enhanced cleaning"""
         if not text:
             return ""
-        return text
+        # Remove excessive whitespace but preserve structure
+        lines = [line.strip() for line in text.split('\n')]
+        return '\n'.join(line for line in lines if line)
     
     @staticmethod
     def format_markdown(text):
         """
-        Format text as MarkdownV2 with PROPER escaping for Telegram
-        Telegram MarkdownV2 requires escaping: _ * [ ] ( ) ~ ` > # + - = | { } . !
+        Enhanced Markdown formatting with better escaping
         """
         if not text:
             return ""
         
-        # Escape all MarkdownV2 special characters
+        # Enhanced escape characters for MarkdownV2
         escape_chars = r'_*[]()~`>#+-=|{}.!'
         
         def escape_text(txt):
-            # Escape each special character
             for char in escape_chars:
                 txt = txt.replace(char, f'\\{char}')
             return txt
         
         try:
-            # Split into lines and escape each line
+            # Enhanced line processing
             lines = text.split('\n')
-            escaped_lines = [escape_text(line) for line in lines]
+            escaped_lines = []
+            
+            for line in lines:
+                # Skip empty lines
+                if not line.strip():
+                    escaped_lines.append("")
+                    continue
+                
+                # Escape the line
+                escaped_line = escape_text(line)
+                
+                # Preserve list-like structures
+                if escaped_line.strip().startswith(('-', '*', '•')):
+                    escaped_line = f"• {escaped_line.lstrip('-*• ')}"
+                
+                escaped_lines.append(escaped_line)
+            
             return '\n'.join(escaped_lines)
         except Exception as e:
             # If Markdown fails, return plain text
             return text
     
     @staticmethod
-    def format_markdown_simple(text):
-        """
-        Simple Markdown formatting - only escapes the most problematic characters
-        """
-        if not text:
-            return ""
-        
-        # Only escape the most essential characters that break parsing
-        essential_chars = ['_', '*', '`', '[']
-        
-        formatted_text = text
-        for char in essential_chars:
-            formatted_text = formatted_text.replace(char, f'\\{char}')
-        
-        return formatted_text
-    
-    @staticmethod
     def format_html(text):
-        """Format text as HTML"""
+        """Enhanced HTML formatting with better structure"""
         if not text:
             return ""
         
@@ -64,16 +63,26 @@ class TextFormatter:
             # Escape HTML entities
             escaped_text = html.escape(text)
             
-            # Replace newlines with <br> tags for better formatting
-            formatted_text = escaped_text.replace('\n', '<br>')
+            # Enhanced line processing
+            lines = escaped_text.split('\n')
+            html_lines = []
             
-            return f"<pre>{formatted_text}</pre>"
+            for line in lines:
+                if line.strip():
+                    # Preserve paragraph structure
+                    html_lines.append(f"<p>{line}</p>")
+                else:
+                    html_lines.append("<br>")
+            
+            formatted_text = '\n'.join(html_lines)
+            
+            return f"<div class='ocr-text'>{formatted_text}</div>"
         except:
-            return f"<pre>{text}</pre>"
+            return f"<pre>{html.escape(text)}</pre>"
     
     @staticmethod
     def format_text(text, format_type='plain'):
-        """Format text based on specified format type"""
+        """Enhanced text formatting with better error handling"""
         if not text:
             return ""
             
@@ -81,11 +90,12 @@ class TextFormatter:
         
         try:
             if format_type == 'markdown':
-                return TextFormatter.format_markdown_simple(text)
+                return TextFormatter.format_markdown(text)
             elif format_type == 'html':
                 return TextFormatter.format_html(text)
             else:  # plain or any other type
                 return TextFormatter.format_plain(text)
         except Exception as e:
-            # If any formatting fails, return plain text
+            # Enhanced error handling
+            print(f"Formatting error: {e}")
             return text
