@@ -17,6 +17,13 @@ class MongoDB:
         """Connect to MongoDB - Railway optimized"""
         mongodb_uri = os.getenv('MONGODB_URI')
         
+        # Debug logging
+        if mongodb_uri:
+            logger.info(f"✅ MONGODB_URI found: {mongodb_uri[:20]}...")
+        else:
+            logger.warning("❌ MONGODB_URI not found in environment variables")
+            logger.warning("💡 Please check Railway Variables tab")
+        
         if not mongodb_uri:
             logger.warning("MongoDB URI not configured, using mock database")
             self.setup_mock_database()

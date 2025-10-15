@@ -18,6 +18,16 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
+# Debug: Log all environment variables (for debugging)
+logger.info("🔍 Checking environment variables...")
+env_vars_to_check = ['BOT_TOKEN', 'MONGODB_URI', 'SUPPORT_EMAIL', 'CHANNEL', 'ADMIN_IDS']
+for var in env_vars_to_check:
+    value = os.getenv(var)
+    if value:
+        logger.info(f"✅ {var}: Found (length: {len(value)})")
+    else:
+        logger.warning(f"❌ {var}: Not found")
+
 # Import database FIRST to catch any import errors
 try:
     from database.mongodb import db
@@ -81,11 +91,15 @@ async def error_handler(update: Update, context):
 def main():
     """Main function"""
     try:
-        # Get bot token
+        # Get bot token - with multiple fallbacks
         BOT_TOKEN = os.getenv('BOT_TOKEN')
+        
         if not BOT_TOKEN:
             logger.error("❌ BOT_TOKEN not found in environment variables")
+            logger.error("💡 Please check Railway Variables tab and ensure BOT_TOKEN is set")
             return
+        
+        logger.info(f"✅ BOT_TOKEN found: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
         
         # Railway-specific logging
         logger.info("🚄 Starting bot on Railway...")
