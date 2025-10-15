@@ -10,7 +10,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
     handlers=[
-        logging.StreamHandler()  # Railway captures stdout
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
@@ -18,17 +18,7 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Import handlers
-from handlers.start import start_command, handle_membership_check, force_check_membership
-from handlers.help import help_command, handle_help_callback
-from handlers.ocr import handle_image, handle_reformat
-from handlers.menu import (
-    show_main_menu, show_settings_menu, show_statistics,
-    handle_convert_image, show_language_menu, show_format_menu,
-    handle_language_change, handle_format_change, show_language_group
-)
-
-# Import database
+# Import database FIRST to catch any import errors
 try:
     from database.mongodb import db
     logger.info("✅ Database imported successfully")
@@ -69,6 +59,21 @@ except ImportError as e:
     db = MockDB()
     logger.info("✅ Using mock database")
 
+# Now import handlers
+try:
+    from handlers.start import start_command, handle_membership_check, force_check_membership
+    from handlers.help import help_command, handle_help_callback
+    from handlers.ocr import handle_image, handle_reformat
+    from handlers.menu import (
+        show_main_menu, show_settings_menu, show_statistics,
+        handle_convert_image, show_language_menu, show_format_menu,
+        handle_language_change, handle_format_change, show_language_group
+    )
+    logger.info("✅ All handlers imported successfully")
+except ImportError as e:
+    logger.error(f"❌ Handler import failed: {e}")
+    raise
+
 async def error_handler(update: Update, context):
     """Handle errors gracefully"""
     logger.error(f"Update {update} caused error {context.error}")
@@ -84,7 +89,7 @@ def main():
         
         # Railway-specific logging
         logger.info("🚄 Starting bot on Railway...")
-        logger.info("✅ Environment: RAILWAY")
+        logger.info("📊 Environment: PRODUCTION")
         
         # Create application
         application = Application.builder().token(BOT_TOKEN).build()
@@ -131,8 +136,7 @@ def main():
         # Start the bot
         application.run_polling(
             drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES,
-            close_loop=False  # Important for Railway
+            allowed_updates=Update.ALL_TYPES
         )
         
     except Exception as e:

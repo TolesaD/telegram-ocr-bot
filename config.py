@@ -14,17 +14,6 @@ SUPPORTED_LANGUAGES = {
     'amharic': 'amh'
 }
 
-# Language display names
-LANGUAGE_DISPLAY_NAMES = {
-    'english': 'English 🇺🇸', 'spanish': 'Spanish 🇪🇸', 'french': 'French 🇫🇷',
-    'german': 'German 🇩🇪', 'italian': 'Italian 🇮🇹', 'portuguese': 'Portuguese 🇵🇹',
-    'russian': 'Russian 🇷🇺', 'chinese_simplified': 'Chinese 🇨🇳',
-    'japanese': 'Japanese 🇯🇵', 'korean': 'Korean 🇰🇷', 'arabic': 'Arabic 🇸🇦',
-    'hindi': 'Hindi 🇮🇳', 'turkish': 'Turkish 🇹🇷', 'dutch': 'Dutch 🇳🇱',
-    'swedish': 'Swedish 🇸🇪', 'polish': 'Polish 🇵🇱', 'ukrainian': 'Ukrainian 🇺🇦',
-    'greek': 'Greek 🇬🇷', 'amharic': 'Amharic 🇪🇹'
-}
-
 # Performance Settings
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB for Railway
 PROCESSING_TIMEOUT = 45  # seconds
@@ -48,5 +37,5 @@ if admin_ids_str:
         if admin_id and admin_id.isdigit():
             ADMIN_IDS.append(int(admin_id))
 
-# Railway-specific settings
+# Railway environment
 IS_RAILWAY = os.getenv('RAILWAY_ENVIRONMENT') is not None
