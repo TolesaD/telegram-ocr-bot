@@ -5,19 +5,6 @@ from telegram.ext import Application, MessageHandler, filters, CommandHandler, C
 from telegram import Update
 from dotenv import load_dotenv
 
-# TEMPORARY: Hardcode values for Railway testing
-HARDCODED_VALUES = {
-    'BOT_TOKEN': '8440918851:AAHFEBmOrZbQjPC7jRu6n9kbez1IxwuwbN8',
-    'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/?retryWrites=true&w=majority',
-    'SUPPORT_EMAIL': 'tolesadebushe9@gmail.com',
-    'CHANNEL': '@ImageToTextConverter',
-    'ADMIN_IDS': '417079598'
-}
-
-# Override environment variables
-for key, value in HARDCODED_VALUES.items():
-    os.environ[key] = value
-
 # Configure logging for Railway
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -28,12 +15,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-logger.info("🚨 USING TEMPORARY HARDCODED VALUES FOR RAILWAY TESTING")
-
 # Load environment variables
 load_dotenv()
 
-# Import database FIRST to catch any import errors
+# Fallback values if environment variables are not set
+FALLBACK_VALUES = {
+    'BOT_TOKEN': '8440918851:AAHFEBmOrZbQjPC7jRu6n9kbez1IxwuwbN8',
+    'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/?retryWrites=true&w=majority',
+    'SUPPORT_EMAIL': 'tolesadebushe9@gmail.com',
+    'CHANNEL': '@ImageToTextConverter',
+    'ADMIN_IDS': '417079598'
+}
+
+# Set fallback values if environment variables are missing
+for key, fallback_value in FALLBACK_VALUES.items():
+    if not os.getenv(key):
+        os.environ[key] = fallback_value
+        logger.warning(f"⚠️ Using fallback for {key}")
+
+# Import database
 try:
     from database.mongodb import db
     logger.info("✅ Database imported successfully")
