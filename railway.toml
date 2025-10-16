@@ -8,6 +8,6 @@ startCommand = "python app.py"
 [env]
 BOT_TOKEN = "7617054734:AAE9hIDjqgjncA2JR-pOAIb5s_NxD7DEisY"
 MONGODB_URI = "mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/?retryWrites=true&w=majority"
-SUPPORT_EMAIL = "@ImageToTextConvertorSuportBot"
-CHANNEL = "@ImageToTextConvertor"
+SUPPORT_EMAIL = "@ImageToTextConverterSuportBot"
+CHANNEL = "@ImageToTextConverter"
 ADMIN_IDS = "417079598"

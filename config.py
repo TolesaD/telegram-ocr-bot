@@ -12,11 +12,11 @@ PROCESSING_TIMEOUT = 45  # seconds
 FORMAT_OPTIONS = ['plain', 'html', 'copiable']
 
 # Support Bot
-SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConvertorSupportBot')
+SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConverterSupportBot')
 
 # Channel Configuration
-ANNOUNCEMENT_CHANNEL = "@ImageToTextConvertor"
-CHANNEL_USERNAME = "ImageToTextConvertor"
+ANNOUNCEMENT_CHANNEL = "@ImageToTextConverter"
+CHANNEL_USERNAME = "ImageToTextConverter"
 
 # Admin User IDs
 admin_ids_str = os.getenv('ADMIN_IDS', '')
