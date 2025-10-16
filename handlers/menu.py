@@ -1,4 +1,3 @@
-# handlers/menu.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -18,24 +17,25 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
+    text = "🤖 *Main Menu*\n\nChoose an option:"
+    
     if update.callback_query:
-        await update.callback_query.edit_message_text(
-            "🤖 *Main Menu*\n\nChoose an option:",
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
+            text,
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
     else:
-        await update.message.reply_text(
-            "🤖 *Main Menu*\n\nChoose an option:",
+        await update.effective_message.reply_text(
+            text,
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
 
 async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show settings menu with user's current settings (removed language)"""
-    query = update.callback_query
-    await query.answer()
-    
+    """Show settings menu with user's current settings"""
     user_id = update.effective_user.id
     
     # Get user settings
@@ -63,17 +63,23 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Choose what you want to change:"
     )
     
-    await query.edit_message_text(
-        settings_text,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
+            settings_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    else:
+        await update.effective_message.reply_text(
+            settings_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
 async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show text format selection menu (replaced markdown with code)"""
-    query = update.callback_query
-    await query.answer()
-    
+    """Show text format selection menu (replaced markdown with copiable)"""
     user_id = update.effective_user.id
     
     # Get current format
@@ -87,7 +93,7 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton("📄 Plain Text", callback_data="set_format_plain"),
-            InlineKeyboardButton("💻 Code", callback_data="set_format_code")
+            InlineKeyboardButton("📋 Copiable", callback_data="set_format_copiable")
         ],
         [
             InlineKeyboardButton("🌐 HTML", callback_data="set_format_html")
@@ -98,20 +104,33 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     format_info = {
         'plain': "Simple text without formatting",
-        'code': "Copiable code block format",
-        'html': "Text with HTML tags"
+        'copiable': "Clean text optimized for easy copying",
+        'html': "Text with HTML tags for web use"
     }
     
-    await query.edit_message_text(
+    text = (
         f"📝 *Text Format Selection*\n\n"
         f"Current: {current_format.upper()}\n\n"
         f"Choose your preferred text format:\n"
         f"• 📄 Plain: {format_info['plain']}\n"
-        f"• 💻 Code: {format_info['code']}\n"  
-        f"• 🌐 HTML: {format_info['html']}",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        f"• 📋 Copiable: {format_info['copiable']}\n"
+        f"• 🌐 HTML: {format_info['html']}"
     )
+    
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    else:
+        await update.effective_message.reply_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
 async def handle_format_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle format change"""
@@ -151,9 +170,6 @@ async def handle_format_change(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show user statistics"""
-    query = update.callback_query
-    await query.answer()
-    
     user_id = update.effective_user.id
     
     try:
@@ -180,38 +196,66 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
-            stats_text,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+        if update.callback_query:
+            query = update.callback_query
+            await query.answer()
+            await query.edit_message_text(
+                stats_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            await update.effective_message.reply_text(
+                stats_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
         
     except Exception as e:
         logger.error(f"Error showing statistics: {e}")
-        await query.edit_message_text(
-            "❌ Error loading statistics",
-            parse_mode='Markdown'
-        )
+        text = "❌ Error loading statistics"
+        if update.callback_query:
+            query = update.callback_query
+            await query.answer()
+            await query.edit_message_text(
+                text,
+                parse_mode='Markdown'
+            )
+        else:
+            await update.effective_message.reply_text(
+                text,
+                parse_mode='Markdown'
+            )
 
 async def handle_convert_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle convert image callback"""
-    query = update.callback_query
-    await query.answer()
-    
     keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    text = (
         f"📸 *Convert Image*\n\n"
         "Simply send me an image containing text and I'll extract it for you!\n\n"
         "💡 *Tips for best results:*\n"
         "• Use clear, well-lit images\n"
         "• Ensure text is focused\n"
         "• High contrast works best\n"
-        "• Crop to text area",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        "• Crop to text area"
     )
+    
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    else:
+        await update.effective_message.reply_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
 # Main callback handler that routes all menu callbacks
 async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

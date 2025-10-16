@@ -1,18 +1,15 @@
-# config.py
 import os
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# No language support configs needed anymore, as auto
-
 # Performance Settings
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB for Railway
 PROCESSING_TIMEOUT = 45  # seconds
 
-# Text Formatting Options (replaced markdown with code)
-FORMAT_OPTIONS = ['plain', 'code', 'html']
+# Text Formatting Options (replaced markdown with copiable)
+FORMAT_OPTIONS = ['plain', 'html', 'copiable']
 
 # Support Bot
 SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConvertorSupportBot')

@@ -44,7 +44,7 @@ class OCRProcessor:
             self.tesseract_config = '--oem 3 --psm 1 -c preserve_interword_spaces=1'
             return True
         except Exception as e:
-            logger.error("Tesseract initialization failed: %s", e)
+            logger.error("Tesseract initialization failed: {e}")
             return False
     
     def get_tesseract_languages(self):
@@ -82,7 +82,7 @@ class OCRProcessor:
             text = self.fix_bullet_artifacts(text)
             
             processing_time = time.time() - start_time
-            logger.info("⚡ Tesseract processed in %.2fs", processing_time)
+            logger.info("⚡ Tesseract processed in %.2f s", processing_time)
             return text
             
         except Exception as e:
@@ -158,6 +158,8 @@ class OCRProcessor:
         """Extract text with Tesseract, preserving structure"""
         try:
             config = '--oem 3 --psm 1 -c preserve_interword_spaces=1'
+            if lang_code == 'amh':
+                config = '--oem 0 --psm 1 -c preserve_interword_spaces=1'  # Legacy mode for Amharic
             text = pytesseract.image_to_string(
                 image,
                 lang=lang_code,

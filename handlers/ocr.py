@@ -1,4 +1,3 @@
-# handlers/ocr.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -37,7 +36,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Remove expired cache entry
             processing_cache.pop(user_id, None)
     
-    # Get user settings (no language, only format)
+    # Get user settings
     try:
         user = db.get_user(user_id) if db else None
         user_settings = user.get('settings', {}) if user else {}
@@ -46,8 +45,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_settings = {}
     
     text_format = user_settings.get('text_format', 'plain')
-    
-    # No language selection - auto detection handled in OCR
     
     # Mark as processing with enhanced tracking
     processing_cache[user_id] = {
@@ -143,11 +140,11 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{formatted_text}"
         )
         
-        # Enhanced format options - removed markdown, added code
+        # Updated format options
         keyboard = [
             [
                 InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{message.message_id}"),
-                InlineKeyboardButton("💻 Code", callback_data=f"reformat_code_{message.message_id}"),
+                InlineKeyboardButton("📋 Copiable", callback_data=f"reformat_copiable_{message.message_id}"),
                 InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{message.message_id}")
             ],
             [
@@ -159,7 +156,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await processing_msg.edit_text(
             response_text,
             reply_markup=reply_markup,
-            parse_mode=None
+            parse_mode='HTML' if text_format == 'html' else None
         )
         
         logger.info(f"✅ Successfully processed image for user {user_id}")
@@ -226,7 +223,7 @@ async def handle_ocr_error(error):
             "• Straight, horizontal text"
         )
     elif "language" in error_str.lower() and "not installed" in error_str.lower():
-        return f"❌ Language pack not available. Please try another image."
+        return f"❌ Language pack not available. Please try English or another supported language."
     else:
         return f"❌ Error processing image. Please try a different image."
 
@@ -265,17 +262,13 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response_text = f"📝 **Reformatted Text** ({format_type.upper()})\n\n{formatted_text}"
         
         # Smart parse mode selection
-        parse_mode = None
-        if format_type == 'code':
-            parse_mode = 'MarkdownV2'
-        elif format_type == 'html':
-            parse_mode = 'HTML'
+        parse_mode = 'HTML' if format_type == 'html' else None
         
-        # Enhanced keyboard - removed markdown, added code
+        # Updated format options
         keyboard = [
             [
                 InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{original_message_id}"),
-                InlineKeyboardButton("💻 Code", callback_data=f"reformat_code_{original_message_id}"),
+                InlineKeyboardButton("📋 Copiable", callback_data=f"reformat_copiable_{original_message_id}"),
                 InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{original_message_id}")
             ]
         ]
@@ -322,5 +315,4 @@ async def handle_ocr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     if query.data.startswith("reformat_"):
         await handle_reformat(update, context)
     elif query.data == "convert_image":
-        from handlers.menu import handle_convert_image
         await handle_convert_image(update, context)

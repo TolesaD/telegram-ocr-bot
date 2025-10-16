@@ -27,7 +27,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # User has joined, proceed
     logger.info(f"✅ User {user.id} verified, proceeding")
-    await process_user_start(update, context, user, db)
+    from_callback = update.callback_query is not None
+    await process_user_start(update, context, user, db, from_callback=from_callback)
 
 async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
     """Check if user is a member of the announcement channel"""
@@ -82,7 +83,7 @@ async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT
         "We keep announcements minimal and valuable! ✨"
     )
     
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         message_text,
         reply_markup=reply_markup,
         parse_mode='Markdown'
@@ -174,7 +175,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     if from_callback:
         await update.callback_query.edit_message_text(welcome_text, parse_mode='Markdown')
     else:
-        await update.message.reply_text(welcome_text, parse_mode='Markdown')
+        await update.effective_message.reply_text(welcome_text, parse_mode='Markdown')
     
     # Send pinned "Restart the bot" message with clickable button
     keyboard = [[InlineKeyboardButton("🔄 Restart the bot", callback_data="restart_bot")]]
@@ -206,10 +207,9 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         is_persistent=True,
         one_time_keyboard=False
     )
-    await update.effective_message.reply_text(
+    await update.effective_chat.send_text(
         "Use the buttons below to navigate the menu.",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        reply_markup=reply_markup
     )
     
     # Show main menu
@@ -223,13 +223,13 @@ async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_T
     has_joined = await check_channel_membership(update, context, user.id)
     
     if has_joined:
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "✅ *Channel Membership Verified!*\n\n"
             "You are a confirmed member. Thank you! 🎉",
             parse_mode='Markdown'
         )
     else:
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "❌ *Channel Membership Required!*\n\n"
             "Please join our channel and use `/start` to verify.",
             parse_mode='Markdown'
