@@ -1,3 +1,4 @@
+# handlers/start.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -175,9 +176,12 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     else:
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
     
-    # Send pinned "Restart the bot" message
+    # Send pinned "Restart the bot" message with clickable button
+    keyboard = [[InlineKeyboardButton("🔄 Restart the bot", callback_data="restart_bot")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     restart_message = await update.effective_chat.send_message(
-        "🔄 *Restart the bot*\nClick here to restart the bot at any time!",
+        "🔄 *Restart the bot*\nClick the button to restart the bot at any time!",
+        reply_markup=reply_markup,
         parse_mode='Markdown'
     )
     try:
@@ -190,8 +194,12 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     except Exception as e:
         logger.error(f"❌ Failed to pin message for user {user.id}: {e}")
     
-    # Add persistent keyboard with "Menu" button
-    keyboard = [['Menu']]
+    # Add persistent keyboard with multiple menu buttons
+    keyboard = [
+        ['📸 Convert Image', '⚙️ Settings'],
+        ['📊 Statistics', '❓ Help'],
+        ['🔄 Restart']
+    ]
     reply_markup = ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
@@ -199,7 +207,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         one_time_keyboard=False
     )
     await update.effective_message.reply_text(
-        "Use the *Menu* button below to navigate.",
+        "Use the buttons below to navigate the menu.",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -222,7 +230,7 @@ async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_T
         )
     else:
         await update.message.reply_text(
-            "❌ *Channel Membership Required*\n\n"
+            "❌ *Channel Membership Required!*\n\n"
             "Please join our channel and use `/start` to verify.",
             parse_mode='Markdown'
         )
@@ -234,3 +242,6 @@ async def handle_start_callback(update: Update, context: ContextTypes.DEFAULT_TY
     
     if query.data == "check_membership":
         await handle_membership_check(update, context)
+    elif query.data == "restart_bot":
+        await query.answer("🔄 Restarting the bot...")
+        await start_command(update, context)

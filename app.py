@@ -1,3 +1,4 @@
+# app.py
 import os
 import logging
 import asyncio
@@ -76,7 +77,7 @@ except ImportError as e:
 
 # Now import handlers
 try:
-    from handlers.start import start_command, handle_membership_check, force_check_membership
+    from handlers.start import start_command, handle_membership_check, force_check_membership, handle_start_callback
     from handlers.help import help_command, handle_help_callback
     from handlers.ocr import handle_image, handle_reformat
     from handlers.menu import (
@@ -95,9 +96,16 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text from persistent keyboard"""
-    if update.message.text == "Menu":
-        await show_main_menu(update, context)
-    elif update.message.text == "Restart the bot":
+    text = update.message.text
+    if text == "📸 Convert Image":
+        await handle_convert_image(update, context)
+    elif text == "⚙️ Settings":
+        await show_settings_menu(update, context)
+    elif text == "📊 Statistics":
+        await show_statistics(update, context)
+    elif text == "❓ Help":
+        await help_command(update, context)
+    elif text == "🔄 Restart":
         await start_command(update, context)
 
 def main():
@@ -131,11 +139,12 @@ def main():
         application.add_handler(CommandHandler("check", force_check_membership))
         
         application.add_handler(MessageHandler(filters.PHOTO, handle_image))
-        application.add_handler(MessageHandler(filters.Regex('^(Menu|Restart the bot)$'), handle_menu_text))
+        application.add_handler(MessageHandler(filters.Regex('^(📸 Convert Image|⚙️ Settings|📊 Statistics|❓ Help|🔄 Restart)$'), handle_menu_text))
         
         # Callback handlers
         callback_patterns = [
             ("check_membership", handle_membership_check),
+            ("restart_bot", handle_start_callback),  # Handle restart callback
             ("main_menu", show_main_menu),
             ("settings", show_settings_menu),
             ("statistics", show_statistics),

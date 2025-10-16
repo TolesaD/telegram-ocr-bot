@@ -1,3 +1,4 @@
+# utils/image_processing.py
 import asyncio
 import logging
 import time
@@ -40,7 +41,7 @@ class OCRProcessor:
         try:
             version = pytesseract.get_tesseract_version()
             logger.info(f"✅ Tesseract v{version} initialized successfully")
-            self.tesseract_config = '--oem 3 --psm 6 -c preserve_interword_spaces=1'
+            self.tesseract_config = '--oem 3 --psm 1 -c preserve_interword_spaces=1'
             return True
         except Exception as e:
             logger.error("Tesseract initialization failed: %s", e)
@@ -85,8 +86,8 @@ class OCRProcessor:
             return text
             
         except Exception as e:
-            logger.error("OCR processing failed: %s", e)
-            raise
+            logger.error("OCR processing failed: {e}")
+            return f"❌ OCR failed: {str(e)}. Please ensure the language pack is installed and try a clearer image."
     
     async def detect_script(self, image):
         """Detect script using Tesseract OSD"""
@@ -156,7 +157,7 @@ class OCRProcessor:
     def _tesseract_extract_enhanced(self, image, lang_code):
         """Extract text with Tesseract, preserving structure"""
         try:
-            config = '--oem 3 --psm 6 -c preserve_interword_spaces=1'
+            config = '--oem 3 --psm 1 -c preserve_interword_spaces=1'
             text = pytesseract.image_to_string(
                 image,
                 lang=lang_code,
