@@ -1,4 +1,3 @@
-# utils/image_processing.py
 import asyncio
 import logging
 import time
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 os.environ['TESSDATA_PREFIX'] = os.getenv('TESSDATA_PREFIX', 'C:\\Program Files\\Tesseract-OCR\\tessdata')
 
 # Enhanced thread pool for better performance
-thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ocr_")
+thread_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ocr_")
 
 class OCRProcessor:
     def __init__(self):
@@ -41,10 +40,10 @@ class OCRProcessor:
         try:
             version = pytesseract.get_tesseract_version()
             logger.info(f"✅ Tesseract v{version} initialized successfully")
-            self.tesseract_config = '--oem 3 --psm 1 -c preserve_interword_spaces=1'
+            self.tesseract_config = '--oem 3 --psm 3 -c preserve_interword_spaces=1'
             return True
         except Exception as e:
-            logger.error("Tesseract initialization failed: {e}")
+            logger.error(f"Tesseract initialization failed: {e}")
             return False
     
     def get_tesseract_languages(self):
@@ -82,11 +81,11 @@ class OCRProcessor:
             text = self.fix_bullet_artifacts(text)
             
             processing_time = time.time() - start_time
-            logger.info("⚡ Tesseract processed in %.2f s", processing_time)
+            logger.info("⚡ Tesseract processed in %.2fs", processing_time)
             return text
             
         except Exception as e:
-            logger.error("OCR processing failed: {e}")
+            logger.error(f"OCR processing failed: {e}")
             return f"❌ OCR failed: {str(e)}. Please ensure the language pack is installed and try a clearer image."
     
     async def detect_script(self, image):
@@ -138,7 +137,76 @@ class OCRProcessor:
             'Sindhi': 'snd',
             'Tibetan': 'bod',
             'Swahili': 'swa',
-            'Yoruba': 'yor'
+            'Yoruba': 'yor',
+            'Urdu': 'urd',
+            'Persian': 'fas',
+            'Pashto': 'pus',
+            'Divehi': 'div',
+            'Tigrinya': 'tir',
+            'Zulu': 'zul',
+            'Xhosa': 'xho',
+            'Afrikaans': 'afr',
+            'Albanian': 'sqi',
+            'Azerbaijani': 'aze',
+            'Belarusian': 'bel',
+            'Bosnian': 'bos',
+            'Bulgarian': 'bul',
+            'Catalan': 'cat',
+            'Cebuano': 'ceb',
+            'Chichewa': 'nya',
+            'Croatian': 'hrv',
+            'Czech': 'ces',
+            'Danish': 'dan',
+            'Dutch': 'nld',
+            'Esperanto': 'epo',
+            'Estonian': 'est',
+            'Finnish': 'fin',
+            'French': 'fra',
+            'Galician': 'glg',
+            'German': 'deu',
+            'Greek': 'ell',
+            'Hausa': 'hau',
+            'Hungarian': 'hun',
+            'Icelandic': 'isl',
+            'Igbo': 'ibo',
+            'Indonesian': 'ind',
+            'Irish': 'gle',
+            'Italian': 'ita',
+            'Javanese': 'jav',
+            'Kazakh': 'kaz',
+            'Kyrgyz': 'kir',
+            'Latvian': 'lav',
+            'Lithuanian': 'lit',
+            'Luxembourgish': 'ltz',
+            'Macedonian': 'mkd',
+            'Malagasy': 'mlg',
+            'Malay': 'msa',
+            'Maltese': 'mlt',
+            'Maori': 'mri',
+            'Mongolian': 'mon',
+            'Nepali': 'nep',
+            'Norwegian': 'nor',
+            'Polish': 'pol',
+            'Portuguese': 'por',
+            'Romanian': 'ron',
+            'Serbian': 'srp',
+            'Shona': 'sna',
+            'Slovak': 'slk',
+            'Slovenian': 'slv',
+            'Somali': 'som',
+            'Sotho': 'sot',
+            'Spanish': 'spa',
+            'Sundanese': 'sun',
+            'Swahili': 'swa',
+            'Swedish': 'swe',
+            'Tagalog': 'tgl',
+            'Tajik': 'tgk',
+            'Turkish': 'tur',
+            'Ukrainian': 'ukr',
+            'Uzbek': 'uzb',
+            'Vietnamese': 'vie',
+            'Welsh': 'cym',
+            'Yiddish': 'yid'
         }
         lang_code = mapping.get(script, 'eng')
         available_langs = self.get_tesseract_languages()
@@ -157,9 +225,9 @@ class OCRProcessor:
     def _tesseract_extract_enhanced(self, image, lang_code):
         """Extract text with Tesseract, preserving structure"""
         try:
-            config = '--oem 3 --psm 1 -c preserve_interword_spaces=1'
+            config = '--oem 3 --psm 3 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'
             if lang_code == 'amh':
-                config = '--oem 0 --psm 1 -c preserve_interword_spaces=1'  # Legacy mode for Amharic
+                config = '--oem 0 --psm 3 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'
             text = pytesseract.image_to_string(
                 image,
                 lang=lang_code,
@@ -183,7 +251,7 @@ class OCRProcessor:
             image = Image.open(io.BytesIO(image_bytes))
             original_width, original_height = image.size
             
-            max_dim = 2000  # Increased for better detail
+            max_dim = 2000
             if max(image.size) > max_dim:
                 scale = max_dim / max(image.size)
                 new_width = int(image.width * scale)
@@ -196,14 +264,14 @@ class OCRProcessor:
                 image = image.convert('L')
             
             enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(3.0)  # Increased for better bullet recognition
+            image = enhancer.enhance(4.0)  # Increased for better text clarity
             enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(3.0)
+            image = enhancer.enhance(3.5)
             enhancer = ImageEnhance.Brightness(image)
-            image = enhancer.enhance(1.2)
+            image = enhancer.enhance(1.3)
             image = image.filter(ImageFilter.MedianFilter(size=3))
             image = image.filter(ImageFilter.EDGE_ENHANCE)
-            image = ImageOps.autocontrast(image, cutoff=3)
+            image = ImageOps.autocontrast(image, cutoff=5)
             
             return image
             
@@ -238,7 +306,7 @@ class OCRProcessor:
         """Fix common bullet artifacts like 'e', 'o', or 'point'"""
         lines = text.split('\n')
         fixed_lines = []
-        bullet_chars = ['e', 'o', '0', 'point', '•', '*', '-', '–']
+        bullet_chars = ['e', 'o', '0', 'point', '•', '*', '-', '–', '°', '·']
         for line in lines:
             stripped = line.strip()
             if stripped:
@@ -257,6 +325,7 @@ class OCRProcessor:
             '|': 'I',
             '0': 'O',
             '1': 'I',
+            '°': '•'
         }
         for old, new in replacements.items():
             text = text.replace(old, new)

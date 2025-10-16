@@ -1,4 +1,3 @@
-# handlers/start.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -50,13 +49,17 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
             return False
         
     except Exception as e:
-        logger.error(f"🚨 Error checking membership: {e}")
+        logger.error(f"🚨 Error checking membership for user {user_id}: {e}")
         try:
             chat = await context.bot.get_chat(config.ANNOUNCEMENT_CHANNEL)
-            logger.warning(f"⚠️ Bot can access {chat.title} but can't check membership")
+            logger.warning(f"⚠️ Bot can access channel {chat.title} but can't check membership")
             return False
         except Exception as e2:
-            logger.error(f"🚨 Bot cannot access channel: {e2}")
+            logger.error(f"🚨 Bot cannot access channel {config.ANNOUNCEMENT_CHANNEL}: {e2}")
+            await update.effective_message.reply_text(
+                f"❌ Error: Bot cannot access the channel @{config.CHANNEL_USERNAME}. "
+                "Please ensure the bot is an admin in the channel and try again."
+            )
             return False
 
 async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -68,26 +71,37 @@ async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     message_text = (
-        "👋 *Welcome to Image-to-Text Converter Bot!*\n\n"
-        "📢 *Join Our Announcement Channel First*\n\n"
-        "To use this bot, please join our channel for:\n"
-        "• 🚀 New features and updates\n"
-        "• 💡 Usage tips and tutorials\n"
-        "• 🔧 Maintenance announcements\n"
-        "• 📢 Important news\n\n"
-        "*How to proceed:*\n"
-        "1. Click *'Join Announcement Channel'*\n"
+        "👋 *Welcome to Image-to-Text Convertor Bot!*\n\n"
+        "📢 *Join Our Channel First*\n\n"
+        "Please join our channel to use this bot:\n"
+        "• 🚀 Get updates and new features\n"
+        "• 💡 Learn usage tips\n"
+        "• 🔧 Stay informed about maintenance\n\n"
+        "*Steps:*\n"
+        "1. Click 'Join Announcement Channel'\n"
         "2. Join the channel\n"
-        "3. Return and click *'I've Joined'*\n"
-        "4. Start converting images! 🎉\n\n"
-        "We keep announcements minimal and valuable! ✨"
+        "3. Click 'I've Joined'\n"
+        "4. Start converting images! 🎉"
     )
     
-    await update.effective_message.reply_text(
-        message_text,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
+    try:
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            await update.effective_message.reply_text(
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+    except Exception as e:
+        logger.error(f"❌ Error sending channel requirement message: {e}")
+        await update.effective_message.reply_text(
+            "❌ Error displaying channel join message. Please try again or contact support."
+        )
 
 async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle membership check callback"""
@@ -109,12 +123,7 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     else:
         logger.warning(f"❌ User {user.id} not verified")
         await query.answer(
-            "❌ We couldn't verify your channel membership.\n\n"
-            "Please ensure:\n"
-            "• You actually joined the channel\n"
-            "• You didn't leave immediately\n"
-            "• The join was completed\n\n"
-            "Try joining again and wait a moment before clicking.",
+            "❌ Please join the channel and wait a moment before clicking 'I've Joined'.",
             show_alert=True
         )
 
@@ -148,22 +157,21 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     
     welcome_text = (
         f"🎉 *Welcome {user.first_name}!*\n\n"
-        "🤖 *Image-to-Text Converter Bot*\n\n"
+        "🤖 *Image-to-Text Convertor Bot*\n\n"
         "✨ *Features:*\n"
         "• 🚀 Optimized text extraction\n"
-        "• 🔍 Supports over 100 languages automatically\n"
-        "• 📝 Multiple text formats\n"
-        "• 💾 Your preferences saved\n\n"
+        "• 🌐 Supports over 100 languages\n"
+        "• 📝 Formats: Plain, HTML, Copiable\n"
+        "• 💾 Saves your preferences\n\n"
         "📸 *How to use:*\n"
-        "1. Send me any image with text\n"
-        "2. I'll extract and format the text\n"
-        "3. Choose your preferred format\n\n"
-        "💡 *For best results:*\n"
-        "• Clear, well-lit images\n"
-        "• Focused, non-blurry text\n"
-        "• High contrast\n"
-        "• Crop to text area\n\n"
-        "Use the *Menu* button below or the pinned *Restart the bot* message to navigate! 🎯"
+        "1. Send an image with text\n"
+        "2. Get extracted text in your format\n"
+        "3. Choose formats via Settings\n\n"
+        "💡 *Tips:*\n"
+        "• Use clear, high-contrast images\n"
+        "• Crop to text area\n"
+        "• Ensure good lighting\n"
+        "Use the Menu below or pinned message to navigate! 🎯"
     )
     
     if db and hasattr(db, 'is_mock') and db.is_mock:
@@ -181,7 +189,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     keyboard = [[InlineKeyboardButton("🔄 Restart the bot", callback_data="restart_bot")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     restart_message = await update.effective_chat.send_message(
-        "🔄 *Restart the bot*\nClick the button to restart the bot at any time!",
+        "🔄 *Restart the bot*\nClick to restart anytime!",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -207,8 +215,8 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         is_persistent=True,
         one_time_keyboard=False
     )
-    await update.effective_chat.send_text(
-        "Use the buttons below to navigate the menu.",
+    await update.effective_chat.send_message(
+        "Use the buttons below to navigate.",
         reply_markup=reply_markup
     )
     

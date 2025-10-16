@@ -18,7 +18,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     help_text = (
         "❓ *Help Center*\n\n"
-        "Welcome to the Image-to-Text Converter Bot! Select an option to learn more:\n\n"
+        "Welcome to the Image-to-Text Convertor Bot! Select an option to learn more:\n\n"
         "• 📸 *How to Use*: Learn how to convert images\n"
         "• 🌐 *Supported Languages*: Over 100 languages supported\n"
         "• 📝 *Formats*: Available text output formats\n"

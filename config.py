@@ -15,8 +15,8 @@ FORMAT_OPTIONS = ['plain', 'html', 'copiable']
 SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConvertorSupportBot')
 
 # Channel Configuration
-ANNOUNCEMENT_CHANNEL = "@ImageToTextConverter"
-CHANNEL_USERNAME = "ImageToTextConverter"
+ANNOUNCEMENT_CHANNEL = "@ImageToTextConvertor"
+CHANNEL_USERNAME = "ImageToTextConvertor"
 
 # Admin User IDs
 admin_ids_str = os.getenv('ADMIN_IDS', '')
