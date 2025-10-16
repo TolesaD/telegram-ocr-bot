@@ -180,7 +180,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     
     # Add storage info
     if db and hasattr(db, 'is_mock') and db.is_mock:
-        welcome_text += "💾 *Storage:* Temporary (reset on restart)\n\n"
+        welcome_text += ""
     else:
         welcome_text += "💾 *Storage:* Permanent settings\n\n"
     

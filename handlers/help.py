@@ -24,7 +24,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Markdown\n"
         "• HTML\n\n"
         "❓ *Need Help?*\n"
-        "Contact support via email for assistance."
+        "Contact support bot email for assistance."
     )
     
     keyboard = [
@@ -43,8 +43,8 @@ async def handle_help_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if query.data == "contact_support":
         support_text = (
             f"📧 *Contact Support*\n\n"
-            f"For assistance, please email:\n"
-            f"`{config.SUPPORT_EMAIL}`\n\n"
+            f"For assistance, please contact us though the following bot:\n"
+            f"`{config.SUPPORT_BOT}`\n\n"
             f"Please include:\n"
             f"• Your username\n"
             f"• Description of the issue\n"
