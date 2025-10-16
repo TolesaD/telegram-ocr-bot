@@ -1,3 +1,4 @@
+# utils/text_formatter.py
 import html
 import re
 
@@ -13,45 +14,15 @@ class TextFormatter:
         return '\n'.join(line for line in lines if line)
     
     @staticmethod
-    def format_markdown(text):
+    def format_code(text):
         """
-        Enhanced Markdown formatting with better escaping
+        Format as copiable code block
         """
         if not text:
             return ""
         
-        # Enhanced escape characters for MarkdownV2
-        escape_chars = r'_*[]()~`>#+-=|{}.!'
-        
-        def escape_text(txt):
-            for char in escape_chars:
-                txt = txt.replace(char, f'\\{char}')
-            return txt
-        
-        try:
-            # Enhanced line processing
-            lines = text.split('\n')
-            escaped_lines = []
-            
-            for line in lines:
-                # Skip empty lines
-                if not line.strip():
-                    escaped_lines.append("")
-                    continue
-                
-                # Escape the line
-                escaped_line = escape_text(line)
-                
-                # Preserve list-like structures
-                if escaped_line.strip().startswith(('-', '*', '•')):
-                    escaped_line = f"• {escaped_line.lstrip('-*• ')}"
-                
-                escaped_lines.append(escaped_line)
-            
-            return '\n'.join(escaped_lines)
-        except Exception as e:
-            # If Markdown fails, return plain text
-            return text
+        # Escape for Markdown code block
+        return '```\n' + text.replace('`', '\\`') + '\n```'
     
     @staticmethod
     def format_html(text):
@@ -96,8 +67,8 @@ class TextFormatter:
         format_type = format_type.lower()
         
         try:
-            if format_type == 'markdown':
-                return TextFormatter.format_markdown(text)
+            if format_type == 'code':
+                return TextFormatter.format_code(text)
             elif format_type == 'html':
                 return TextFormatter.format_html(text)
             else:  # plain or any other type

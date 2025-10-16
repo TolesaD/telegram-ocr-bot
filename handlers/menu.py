@@ -1,3 +1,4 @@
+# handlers/menu.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -31,7 +32,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show settings menu with user's current settings"""
+    """Show settings menu with user's current settings (removed language)"""
     query = update.callback_query
     await query.answer()
     
@@ -45,15 +46,12 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"Error getting user settings: {e}")
         user_settings = {}
     
-    current_language = user_settings.get('language', 'english')
     current_format = user_settings.get('text_format', 'plain')
     
     # Get display names
-    language_display = config.LANGUAGE_DISPLAY_NAMES.get(current_language, current_language)
     format_display = current_format.upper()
     
     keyboard = [
-        [InlineKeyboardButton(f"🌐 Language: {language_display}", callback_data="change_language")],
         [InlineKeyboardButton(f"📝 Format: {format_display}", callback_data="change_format")],
         [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]
     ]
@@ -61,7 +59,6 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     settings_text = (
         "⚙️ *Settings*\n\n"
-        f"• 🌐 *Current Language:* {language_display}\n"
         f"• 📝 *Current Format:* {format_display}\n\n"
         "Choose what you want to change:"
     )
@@ -72,137 +69,8 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode='Markdown'
     )
 
-async def show_language_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show language selection menu with organized groups"""
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = update.effective_user.id
-    
-    # Get current language
-    try:
-        user = db.get_user(user_id)
-        user_settings = user.get('settings', {}) if user else {}
-        current_language = user_settings.get('language', 'english')
-    except Exception as e:
-        current_language = 'english'
-    
-    keyboard = []
-    
-    # European Languages
-    keyboard.append([InlineKeyboardButton("🌍 European Languages", callback_data="language_group_european")])
-    
-    # Asian Languages  
-    keyboard.append([InlineKeyboardButton("🌏 Asian Languages", callback_data="language_group_asian")])
-    
-    # Middle Eastern Languages
-    keyboard.append([InlineKeyboardButton("🌐 Middle Eastern Languages", callback_data="language_group_middle_eastern")])
-    
-    # African Languages
-    keyboard.append([InlineKeyboardButton("🌍 African Languages", callback_data="language_group_african")])
-    
-    # Indian Languages
-    keyboard.append([InlineKeyboardButton("🇮🇳 Indian Languages", callback_data="language_group_indian")])
-    
-    # Back button
-    keyboard.append([InlineKeyboardButton("🔙 Back to Settings", callback_data="settings")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    current_lang_display = config.LANGUAGE_DISPLAY_NAMES.get(current_language, current_language)
-    
-    await query.edit_message_text(
-        f"🌐 *Language Selection*\n\n"
-        f"Current: {current_lang_display}\n\n"
-        "Choose a language group:",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-
-async def show_language_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show languages in a specific group"""
-    query = update.callback_query
-    await query.answer()
-    
-    group_name = query.data.replace('language_group_', '')
-    
-    if group_name not in config.LANGUAGE_GROUPS:
-        await query.answer("Invalid language group")
-        return
-    
-    languages = config.LANGUAGE_GROUPS[group_name]
-    
-    if not languages:
-        await query.answer("No languages available in this group")
-        return
-    
-    keyboard = []
-    
-    # Add languages in rows of 2
-    row = []
-    for lang in languages:
-        display_name = config.LANGUAGE_DISPLAY_NAMES.get(lang, lang)
-        row.append(InlineKeyboardButton(display_name, callback_data=f"set_language_{lang}"))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    
-    if row:  # Add remaining buttons if any
-        keyboard.append(row)
-    
-    # Back button
-    keyboard.append([InlineKeyboardButton("🔙 Back to Language Groups", callback_data="change_language")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    group_display = group_name.replace('_', ' ').title()
-    
-    await query.edit_message_text(
-        f"🌐 *{group_display}*\n\n"
-        "Select your preferred language:",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-
-async def handle_language_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle language change"""
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = update.effective_user.id
-    language = query.data.replace('set_language_', '')
-    
-    if language not in config.SUPPORTED_LANGUAGES:
-        await query.answer("❌ Language not supported")
-        return
-    
-    # Update user settings
-    try:
-        user = db.get_user(user_id)
-        if user:
-            settings = user.get('settings', {})
-            settings['language'] = language
-            db.update_user_settings(user_id, settings)
-        else:
-            # Create new user with settings
-            user_data = {
-                'user_id': user_id,
-                'settings': {'language': language, 'text_format': 'plain'}
-            }
-            db.insert_user(user_data)
-        
-        language_display = config.LANGUAGE_DISPLAY_NAMES.get(language, language)
-        await query.answer(f"✅ Language set to {language_display}")
-        
-        # Return to settings menu
-        await show_settings_menu(update, context)
-        
-    except Exception as e:
-        logger.error(f"Error updating language: {e}")
-        await query.answer("❌ Error updating language")
-
 async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show text format selection menu"""
+    """Show text format selection menu (replaced markdown with code)"""
     query = update.callback_query
     await query.answer()
     
@@ -219,7 +87,7 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton("📄 Plain Text", callback_data="set_format_plain"),
-            InlineKeyboardButton("📋 Markdown", callback_data="set_format_markdown")
+            InlineKeyboardButton("💻 Code", callback_data="set_format_code")
         ],
         [
             InlineKeyboardButton("🌐 HTML", callback_data="set_format_html")
@@ -230,7 +98,7 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     format_info = {
         'plain': "Simple text without formatting",
-        'markdown': "Formatted text for Markdown",
+        'code': "Copiable code block format",
         'html': "Text with HTML tags"
     }
     
@@ -239,7 +107,7 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Current: {current_format.upper()}\n\n"
         f"Choose your preferred text format:\n"
         f"• 📄 Plain: {format_info['plain']}\n"
-        f"• 📋 Markdown: {format_info['markdown']}\n"  
+        f"• 💻 Code: {format_info['code']}\n"  
         f"• 🌐 HTML: {format_info['html']}",
         reply_markup=reply_markup,
         parse_mode='Markdown'
@@ -268,7 +136,7 @@ async def handle_format_change(update: Update, context: ContextTypes.DEFAULT_TYP
             # Create new user with settings
             user_data = {
                 'user_id': user_id,
-                'settings': {'language': 'english', 'text_format': text_format}
+                'settings': {'text_format': text_format}
             }
             db.insert_user(user_data)
         
@@ -299,7 +167,6 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stats_text += "📅 Recent Requests:\n"
             for req in recent_requests[:3]:  # Show last 3 requests
                 timestamp = req.get('timestamp', 'Unknown')
-                language = req.get('language', 'english')
                 status = req.get('status', 'unknown')
                 
                 if isinstance(timestamp, str):
@@ -308,7 +175,7 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     time_str = timestamp.strftime("%Y-%m-%d %H:%M")
                 
                 status_icon = "✅" if status == 'success' else "❌"
-                stats_text += f"{status_icon} {time_str} - {language.title()}\n"
+                stats_text += f"{status_icon} {time_str}\n"
         
         keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -331,30 +198,17 @@ async def handle_convert_image(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     
-    user_id = update.effective_user.id
-    
-    # Get user settings to show current language
-    try:
-        user = db.get_user(user_id)
-        user_settings = user.get('settings', {}) if user else {}
-        current_language = user_settings.get('language', 'english')
-    except Exception as e:
-        current_language = 'english'
-    
-    language_display = config.LANGUAGE_DISPLAY_NAMES.get(current_language, current_language)
-    
     keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
         f"📸 *Convert Image*\n\n"
-        f"Current Language: {language_display}\n\n"
         "Simply send me an image containing text and I'll extract it for you!\n\n"
         "💡 *Tips for best results:*\n"
         "• Use clear, well-lit images\n"
         "• Ensure text is focused\n"
         "• High contrast works best\n"
-        "• Choose the right language in settings",
+        "• Crop to text area",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -377,14 +231,8 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_settings_menu(update, context)
     elif callback_data == "statistics":
         await show_statistics(update, context)
-    elif callback_data == "change_language":
-        await show_language_menu(update, context)
     elif callback_data == "change_format":
         await show_format_menu(update, context)
-    elif callback_data.startswith("language_group_"):
-        await show_language_group(update, context)
-    elif callback_data.startswith("set_language_"):
-        await handle_language_change(update, context)
     elif callback_data.startswith("set_format_"):
         await handle_format_change(update, context)
     else:

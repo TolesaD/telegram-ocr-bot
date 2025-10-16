@@ -1,4 +1,5 @@
-# Enhanced language support with 80+ languages
+# ocr_engine/language_support.py
+# Enhanced language support with 100+ languages (assuming all Tesseract packs installed)
 LANGUAGE_MAPPING = {
     'af': 'Afrikaans', 'ar': 'Arabic', 'az': 'Azerbaijani', 'be': 'Belarusian',
     'bg': 'Bulgarian', 'bn': 'Bengali', 'bs': 'Bosnian', 'ca': 'Catalan',
@@ -22,10 +23,17 @@ LANGUAGE_MAPPING = {
     'te': 'Telugu', 'tg': 'Tajik', 'th': 'Thai', 'tl': 'Filipino',
     'tr': 'Turkish', 'uk': 'Ukrainian', 'ur': 'Urdu', 'uz': 'Uzbek',
     'vi': 'Vietnamese', 'xh': 'Xhosa', 'yi': 'Yiddish', 'yo': 'Yoruba',
-    'zh': 'Chinese', 'zu': 'Zulu'
+    'zh': 'Chinese', 'zu': 'Zulu',
+    # Added more for African and Indian
+    'am': 'Amharic', 'bm': 'Bambara', 'ff': 'Fula', 'lg': 'Luganda',
+    'ln': 'Lingala', 'lu': 'Luba-Katanga', 'nd': 'North Ndebele',
+    'om': 'Oromo', 'rn': 'Kirundi', 'rw': 'Kinyarwanda', 'sg': 'Sango',
+    'sn': 'Shona', 'ss': 'Swati', 'ti': 'Tigrinya', 'tn': 'Tswana',
+    'ts': 'Tsonga', 've': 'Venda', 'wo': 'Wolof',
+    'as': 'Assamese', 'bh': 'Bihari', 'or': 'Oriya', 'sd': 'Sindhi'
 }
 
-# Tesseract language codes
+# Tesseract language codes (expanded for all)
 TESSERACT_LANGUAGES = {
     'af': 'afr', 'ar': 'ara', 'az': 'aze', 'be': 'bel', 'bg': 'bul',
     'bn': 'ben', 'bs': 'bos', 'ca': 'cat', 'ceb': 'ceb', 'cs': 'ces',
@@ -44,7 +52,13 @@ TESSERACT_LANGUAGES = {
     'sv': 'swe', 'sw': 'swa', 'ta': 'tam', 'te': 'tel', 'tg': 'tgk',
     'th': 'tha', 'tl': 'tgl', 'tr': 'tur', 'uk': 'ukr', 'ur': 'urd',
     'uz': 'uzb', 'vi': 'vie', 'xh': 'xho', 'yi': 'yid', 'yo': 'yor',
-    'zh': 'chi_sim', 'zu': 'zul'
+    'zh': 'chi_sim', 'zu': 'zul',
+    # Added more
+    'am': 'amh', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
+    'ln': 'lin', 'lu': 'lua', 'nd': 'nde', 'om': 'orm', 'rn': 'run',
+    'rw': 'kin', 'sg': 'sag', 'sn': 'sna', 'ss': 'ssw', 'ti': 'tir',
+    'tn': 'tsn', 'ts': 'tso', 've': 'ven', 'wo': 'wol', 'or': 'ori',
+    'sd': 'snd'
 }
 
 def get_supported_languages():

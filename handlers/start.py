@@ -1,4 +1,5 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+# handlers/start.py
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime, timedelta
 from handlers.menu import show_main_menu
@@ -138,7 +139,6 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
             'created_at': datetime.now(),
             'updated_at': datetime.now(),
             'settings': {
-                'language': 'english',
                 'text_format': 'plain',
                 'updated_at': datetime.now()
             }
@@ -164,7 +164,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "🤖 *Image-to-Text Converter Bot*\n\n"
         "✨ *Features:*\n"
         "• 🚀 Optimized text extraction\n"
-        "• 🔍 Multi-language OCR support\n"
+        "• 🔍 Supports over 100 languages automatically\n"
         "• 📝 Multiple text formats\n"
         "• 💾 Your preferences saved\n\n"
         "📸 *How to use:*\n"
@@ -188,10 +188,16 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     
     if from_callback:
         await update.callback_query.edit_message_text(welcome_text, parse_mode='Markdown')
-        await show_main_menu(update, context)
     else:
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
-        await show_main_menu(update, context)
+    
+    # Show main menu
+    await show_main_menu(update, context)
+    
+    # Add persistent keyboard
+    keyboard = [['Main Menu']]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
+    await update.effective_message.reply_text("Use the button for quick access.", reply_markup=reply_markup)
 
 async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Force check channel membership"""

@@ -1,7 +1,8 @@
+# app.py
 import os
 import logging
 import asyncio
-from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler
+from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram import Update
 from dotenv import load_dotenv
 
@@ -22,7 +23,7 @@ load_dotenv()
 FALLBACK_VALUES = {
     'BOT_TOKEN': '8440918851:AAHFEBmOrZbQjPC7jRu6n9kbez1IxwuwbN8',
     'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/?retryWrites=true&w=majority',
-    'SUPPORT_EMAIL': 'tolesadebushe9@gmail.com',
+    'SUPPORT_BOT': 'ImageToTextConvertorSupportBot',
     'CHANNEL': '@ImageToTextConverter',
     'ADMIN_IDS': '417079598'
 }
@@ -81,17 +82,21 @@ try:
     from handlers.ocr import handle_image, handle_reformat
     from handlers.menu import (
         show_main_menu, show_settings_menu, show_statistics,
-        handle_convert_image, show_language_menu, show_format_menu,
-        handle_language_change, handle_format_change, show_language_group
+        handle_convert_image, show_format_menu,
+        handle_format_change
     )
     logger.info("✅ All handlers imported successfully")
 except ImportError as e:
     logger.error(f"❌ Handler import failed: {e}")
     raise
 
-async def error_handler(update: Update, context):
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors gracefully"""
     logger.error(f"Update {update} caused error {context.error}")
+
+async def handle_main_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text from persistent keyboard"""
+    await show_main_menu(update, context)
 
 def main():
     """Main function"""
@@ -124,6 +129,7 @@ def main():
         application.add_handler(CommandHandler("check", force_check_membership))
         
         application.add_handler(MessageHandler(filters.PHOTO, handle_image))
+        application.add_handler(MessageHandler(filters.Regex('^Main Menu$'), handle_main_menu_text))
         
         # Callback handlers
         callback_patterns = [
@@ -133,10 +139,7 @@ def main():
             ("statistics", show_statistics),
             ("help", handle_help_callback),
             ("convert_image", handle_convert_image),
-            ("change_language", show_language_menu),
-            ("language_group_", show_language_group),
             ("change_format", show_format_menu),
-            ("set_language_", handle_language_change),
             ("set_format_", handle_format_change),
             ("contact_support", handle_help_callback),
             ("reformat_", handle_reformat)

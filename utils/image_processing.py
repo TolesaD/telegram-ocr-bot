@@ -1,3 +1,4 @@
+# utils/image_processing.py
 import asyncio
 import logging
 import time
@@ -7,6 +8,7 @@ import os
 import pytesseract
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
+from ocr_engine.language_support import get_tesseract_code
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ class OCRProcessor:
             logger.info(f"✅ Tesseract v{version} initialized successfully")
             
             # Set optimized Tesseract configuration
-            self.tesseract_config = '--oem 3 --psm 6 -c preserve_interword_spaces=1'
+            self.tesseract_config = '--oem 3 --psm 3 -c preserve_interword_spaces=1'
             
             return True
         except Exception as e:
@@ -61,17 +63,32 @@ class OCRProcessor:
             logger.error("Error getting Tesseract languages: %s", e)
             return ['eng']
     
-    async def extract_text_optimized(self, image_bytes, language='english'):
-        """Enhanced text extraction with performance optimizations"""
+    async def extract_text_optimized(self, image_bytes, language=None):
+        """Enhanced text extraction with performance optimizations and auto script detection"""
         start_time = time.time()
         
         try:
-            # Convert language name to code with caching
-            lang_code = self.get_language_code(language)
-            logger.info("🔤 Using language: %s -> %s", language, lang_code)
+            # Preprocess image
+            processed_image = await asyncio.get_event_loop().run_in_executor(
+                thread_pool,
+                self.enhanced_preprocess_image,
+                image_bytes
+            )
             
-            # Use Tesseract with enhanced preprocessing
-            text = await self.extract_with_tesseract_enhanced(image_bytes, lang_code)
+            # Detect script
+            script = await self.detect_script(processed_image)
+            logger.info(f"Detected script: {script}")
+            
+            lang_code = self.get_lang_from_script(script)
+            
+            # Check if available
+            available_langs = self.get_tesseract_languages()
+            if lang_code not in available_langs:
+                logger.warning(f"Language {lang_code} not available, using English")
+                lang_code = 'eng'
+            
+            # Extract text preserving structure
+            text = await self.extract_with_tesseract_enhanced(processed_image, lang_code)
             
             processing_time = time.time() - start_time
             logger.info("⚡ Tesseract processed in %.2fs", processing_time)
@@ -81,97 +98,69 @@ class OCRProcessor:
             logger.error("OCR processing failed: %s", e)
             raise
     
-    def get_language_code(self, language_name):
-        """Convert language name to Tesseract code with extended support"""
-        language_map = {
-            'english': 'eng', 'spanish': 'spa', 'french': 'fra', 'german': 'deu',
-            'italian': 'ita', 'portuguese': 'por', 'russian': 'rus', 
-            'chinese_simplified': 'chi_sim', 'japanese': 'jpn', 'korean': 'kor',
-            'arabic': 'ara', 'hindi': 'hin', 'turkish': 'tur', 'dutch': 'nld',
-            'swedish': 'swe', 'polish': 'pol', 'ukrainian': 'ukr', 'greek': 'ell',
-            'amharic': 'amh', 'bulgarian': 'bul', 'czech': 'ces', 'danish': 'dan',
-            'finnish': 'fin', 'hebrew': 'heb', 'hungarian': 'hun', 'indonesian': 'ind',
-            'norwegian': 'nor', 'romanian': 'ron', 'serbian': 'srp', 'slovak': 'slk',
-            'slovenian': 'slv', 'thai': 'tha', 'vietnamese': 'vie'
-        }
-        
-        return language_map.get(language_name.lower(), 'eng')
+    async def detect_script(self, image):
+        loop = asyncio.get_event_loop()
+        osd = await loop.run_in_executor(
+            thread_pool,
+            pytesseract.image_to_osd,
+            image
+        )
+        for line in osd.split('\n'):
+            if line.startswith('Script:'):
+                return line.split(':')[1].strip()
+        return 'Latin'
     
-    async def extract_with_tesseract_enhanced(self, image_bytes, lang_code):
-        """Enhanced Tesseract extraction with multiple optimizations"""
+    def get_lang_from_script(self, script):
+        mapping = {
+            'Latin': 'eng',
+            'Cyrillic': 'rus',
+            'Arabic': 'ara',
+            'Devanagari': 'hin',
+            'HanS': 'chi_sim',  # Simplified Chinese
+            'Hangul': 'kor',
+            'Japanese': 'jpn',
+            'Tamil': 'tam',
+            'Telugu': 'tel',
+            'Kannada': 'kan',
+            'Malayalam': 'mal',
+            'Gujarati': 'guj',
+            'Gurmukhi': 'pan',
+            'Bengali': 'ben',
+            'Amharic': 'amh',
+            'Hebrew': 'heb',
+            # Add more as needed for 100 languages
+            'Armenian': 'hye',
+            'Georgian': 'kat',
+            'Thai': 'tha',
+            'Lao': 'lao',
+            'Khmer': 'khm',
+            'Myanmar': 'mya',
+            'Sinhala': 'sin',
+            'Greek': 'ell',
+            'Ethiopic': 'amh',  # For African like Amharic
+            # etc.
+        }
+        return mapping.get(script, 'eng')
+    
+    async def extract_with_tesseract_enhanced(self, image, lang_code):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             thread_pool,
             self._tesseract_extract_enhanced,
-            image_bytes,
+            image,
             lang_code
         )
     
-    def _tesseract_extract_enhanced(self, image_bytes, lang_code):
-        """Enhanced Tesseract extraction with multiple preprocessing techniques"""
+    def _tesseract_extract_enhanced(self, image, lang_code):
+        """Enhanced Tesseract extraction preserving structure"""
         try:
-            # Enhanced image preprocessing
-            processed_image = self.enhanced_preprocess_image(image_bytes)
+            # Use PSM 3 for full page segmentation to preserve layout
+            config = '--oem 3 --psm 3 -c preserve_interword_spaces=1'
             
-            # Check if language is available
-            available_langs = self.get_tesseract_languages()
-            if lang_code not in available_langs:
-                logger.warning("Language %s not available, using English", lang_code)
-                lang_code = 'eng'
-            
-            # Try multiple PSM modes with timeout
-            psm_modes = [6, 3, 4, 8, 11, 13]  # Added more modes for better accuracy
-            
-            best_text = ""
-            best_confidence = 0
-            
-            for psm_mode in psm_modes:
-                try:
-                    config = f'--oem 3 --psm {psm_mode} -c tessedit_do_invert=0'
-                    
-                    # Get both text and confidence
-                    data = pytesseract.image_to_data(
-                        processed_image,
-                        lang=lang_code,
-                        config=config,
-                        output_type=pytesseract.Output.DICT
-                    )
-                    
-                    # Calculate average confidence
-                    confidences = [int(conf) for conf in data['conf'] if int(conf) > 0]
-                    avg_confidence = sum(confidences) / len(confidences) if confidences else 0
-                    
-                    # Extract text
-                    text = ' '.join([word for i, word in enumerate(data['text']) 
-                                   if int(data['conf'][i]) > 60])
-                    
-                    cleaned_text = self.enhanced_clean_text(text)
-                    
-                    # Choose best result based on confidence and text length
-                    if (avg_confidence > best_confidence and 
-                        len(cleaned_text.strip()) > len(best_text.strip())):
-                        best_text = cleaned_text
-                        best_confidence = avg_confidence
-                        
-                    # Early exit if we have high confidence
-                    if avg_confidence > 85 and len(cleaned_text.strip()) > 10:
-                        logger.info("🎯 High confidence (%d%%) with PSM %d", avg_confidence, psm_mode)
-                        return cleaned_text
-                        
-                except Exception as e:
-                    logger.debug("PSM mode %d failed: %s", psm_mode, str(e))
-                    continue
-            
-            # Return best result found
-            if best_text and len(best_text.strip()) > 5:
-                logger.info("🏆 Using best result with %d%% confidence", best_confidence)
-                return best_text
-            
-            # Fallback to simple extraction
             text = pytesseract.image_to_string(
-                processed_image,
+                image,
                 lang=lang_code,
-                config=self.tesseract_config,
+                config=config,
                 timeout=30
             )
             
@@ -245,33 +234,25 @@ class OCRProcessor:
                 return Image.open(io.BytesIO(image_bytes))
     
     def enhanced_clean_text(self, text):
-        """Advanced text cleaning with multiple techniques"""
+        """Advanced text cleaning preserving structure"""
         if not text:
             return ""
         
-        # Remove extra whitespace and normalize
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
-        
-        # Advanced filtering
+        # Preserve lines, remove excessive empty lines
+        lines = text.split('\n')
         filtered_lines = []
+        prev_empty = False
         for line in lines:
-            # Remove lines that are too short or likely noise
-            if len(line) < 2:
-                continue
-                
-            # Check for meaningful content (letters/numbers ratio)
-            alpha_count = sum(c.isalpha() for c in line)
-            digit_count = sum(c.isdigit() for c in line)
-            total_chars = len(line)
-            
-            # Keep lines with reasonable text content
-            if (alpha_count + digit_count) / total_chars > 0.3:  # At least 30% alphanumeric
-                # Remove common OCR artifacts
-                line = self.remove_ocr_artifacts(line)
-                filtered_lines.append(line)
+            stripped = line.strip()
+            if stripped:
+                filtered_lines.append(line.rstrip())  # Preserve leading spaces for indents/lists
+                prev_empty = False
+            elif not prev_empty:
+                filtered_lines.append('')
+                prev_empty = True
         
-        # Join with proper spacing
-        result = '\n'.join(filtered_lines)
+        # Join back
+        result = '\n'.join(filtered_lines).rstrip()
         
         # Final validation
         if len(result.strip()) < 10:

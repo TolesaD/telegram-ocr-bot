@@ -1,47 +1,21 @@
+# config.py
 import os
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# Enhanced language support
-SUPPORTED_LANGUAGES = {
-    'english': 'eng', 'spanish': 'spa', 'french': 'fra', 'german': 'deu',
-    'italian': 'ita', 'portuguese': 'por', 'russian': 'rus', 
-    'chinese_simplified': 'chi_sim', 'japanese': 'jpn', 'korean': 'kor',
-    'arabic': 'ara', 'hindi': 'hin', 'turkish': 'tur', 'dutch': 'nld',
-    'swedish': 'swe', 'polish': 'pol', 'ukrainian': 'ukr', 'greek': 'ell',
-    'amharic': 'amh'
-}
-
-# Language display names
-LANGUAGE_DISPLAY_NAMES = {
-    'english': 'English', 'spanish': 'Spanish', 'french': 'French', 'german': 'German',
-    'italian': 'Italian', 'portuguese': 'Portuguese', 'russian': 'Russian', 
-    'chinese_simplified': 'Chinese', 'japanese': 'Japanese', 'korean': 'Korean',
-    'arabic': 'Arabic', 'hindi': 'Hindi', 'turkish': 'Turkish', 'dutch': 'Dutch',
-    'swedish': 'Swedish', 'polish': 'Polish', 'ukrainian': 'Ukrainian', 'greek': 'Greek',
-    'amharic': 'Amharic'
-}
-
-# Language groups
-LANGUAGE_GROUPS = {
-    'european': ['english', 'spanish', 'french', 'german', 'italian', 'portuguese', 'dutch', 'swedish', 'polish', 'greek'],
-    'asian': ['chinese_simplified', 'japanese', 'korean'],
-    'middle_eastern': ['arabic', 'turkish'],
-    'african': ['amharic'],
-    'eastern_european': ['russian', 'ukrainian']
-}
+# No language support configs needed anymore, as auto
 
 # Performance Settings
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB for Railway
 PROCESSING_TIMEOUT = 45  # seconds
 
-# Text Formatting Options
-FORMAT_OPTIONS = ['plain', 'markdown', 'html']
+# Text Formatting Options (replaced markdown with code)
+FORMAT_OPTIONS = ['plain', 'code', 'html']
 
-# Support Email
-SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'tolesadebushe9@gmail.com')
+# Support Bot
+SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConvertorSupportBot')
 
 # Channel Configuration
 ANNOUNCEMENT_CHANNEL = "@ImageToTextConverter"

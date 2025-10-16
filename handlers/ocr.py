@@ -1,3 +1,4 @@
+# handlers/ocr.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -36,7 +37,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Remove expired cache entry
             processing_cache.pop(user_id, None)
     
-    # Get user settings
+    # Get user settings (no language, only format)
     try:
         user = db.get_user(user_id) if db else None
         user_settings = user.get('settings', {}) if user else {}
@@ -44,22 +45,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error getting user settings: {e}")
         user_settings = {}
     
-    language = user_settings.get('language', 'english')
     text_format = user_settings.get('text_format', 'plain')
     
-    # Get language info
-    lang_code = config.SUPPORTED_LANGUAGES.get(language, 'eng')
-    language_display = config.LANGUAGE_DISPLAY_NAMES.get(language, language)
-    
-    # Check if language is available in Tesseract
-    available_langs = ocr_processor.get_tesseract_languages()
-    if lang_code not in available_langs:
-        logger.warning(f"Language {lang_code} not available, using English")
-        language_display = "English"
-        lang_code = 'eng'
-    
-    # Get the best quality photo
-    photo = message.photo[-1]
+    # No language selection - auto detection handled in OCR
     
     # Mark as processing with enhanced tracking
     processing_cache[user_id] = {
@@ -71,12 +59,13 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         processing_msg = await message.reply_text(
-            f"🔄 Processing your image ({language_display})...\n"
+            f"🔄 Processing your image...\n"
             f"⚡ Using enhanced OCR engine"
         )
         start_time = time.time()
         
         # Download image with timeout
+        photo = message.photo[-1]
         photo_file = await photo.get_file()
         photo_bytes = await asyncio.wait_for(
             photo_file.download_as_bytearray(),
@@ -89,29 +78,28 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         # Update status
-        await processing_msg.edit_text(f"🔍 Processing image in {language_display}...\n⚡ Using advanced preprocessing")
+        await processing_msg.edit_text(f"🔍 Processing image...\n⚡ Using advanced preprocessing")
         
         # Extract text with enhanced timeout
         try:
             extracted_text = await asyncio.wait_for(
-                ocr_processor.extract_text_optimized(bytes(photo_bytes), language),
+                ocr_processor.extract_text_optimized(bytes(photo_bytes)),
                 timeout=config.PROCESSING_TIMEOUT
             )
             
             processing_time = time.time() - start_time
             performance_monitor.record_request(processing_time)
             
-            logger.info(f"✅ Processed image for user {user_id} in {processing_time:.2f}s (Language: {language})")
+            logger.info(f"✅ Processed image for user {user_id} in {processing_time:.2f}s")
             
         except asyncio.TimeoutError:
             await processing_msg.edit_text(
-                f"⏰ Processing took too long for {language_display}.\n\n"
+                f"⏰ Processing took too long.\n\n"
                 "💡 *Optimization Tips:*\n"
                 "• Use smaller, focused images\n"
                 "• Crop to text area only\n"
                 "• Better lighting and contrast\n"
-                "• Clear, non-blurry text\n"
-                "• Try a different language if needed",
+                "• Clear, non-blurry text",
                 parse_mode='Markdown'
             )
             return
@@ -123,7 +111,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "• Use high-contrast images\n"
                 "• Ensure text is horizontal\n"
                 "• Good, even lighting\n"
-                "• Choose correct language\n"
                 "• Clear, focused text",
                 parse_mode='Markdown'
             )
@@ -141,8 +128,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 db.log_ocr_request({
                     'user_id': user_id,
                     'timestamp': datetime.now(),
-                    'language': language,
-                    'language_display': language_display,
                     'format': text_format,
                     'text_length': len(extracted_text),
                     'processing_time': processing_time,
@@ -153,16 +138,16 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Enhanced response with performance info
         response_text = (
-            f"📝 **Extracted Text** ({language_display}, {text_format.upper()})\n"
+            f"📝 **Extracted Text** ({text_format.upper()})\n"
             f"⏱️ Processed in: {processing_time:.2f}s\n\n"
             f"{formatted_text}"
         )
         
-        # Enhanced format options
+        # Enhanced format options - removed markdown, added code
         keyboard = [
             [
                 InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{message.message_id}"),
-                InlineKeyboardButton("📋 Markdown", callback_data=f"reformat_markdown_{message.message_id}"),
+                InlineKeyboardButton("💻 Code", callback_data=f"reformat_code_{message.message_id}"),
                 InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{message.message_id}")
             ],
             [
@@ -177,16 +162,15 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=None
         )
         
-        logger.info(f"✅ Successfully processed image for user {user_id} in {language}")
+        logger.info(f"✅ Successfully processed image for user {user_id}")
         
     except asyncio.TimeoutError:
         error_msg = (
-            f"⏰ Processing timeout for {language_display}.\n\n"
+            f"⏰ Processing timeout.\n\n"
             "🚀 *Quick Fixes:*\n"
             "• Smaller images work faster\n"
             "• Crop to text area\n"
             "• Better image quality\n"
-            "• Try different language\n"
             "• Check image size"
         )
         if processing_msg:
@@ -195,7 +179,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text(error_msg)
             
     except Exception as e:
-        error_msg = await handle_ocr_error(e, language_display)
+        error_msg = await handle_ocr_error(e)
         if processing_msg:
             await processing_msg.edit_text(error_msg)
         else:
@@ -207,8 +191,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 db.log_ocr_request({
                     'user_id': user_id,
                     'timestamp': datetime.now(),
-                    'language': language,
-                    'language_display': language_display,
                     'format': text_format,
                     'status': 'error',
                     'error': str(e)
@@ -220,35 +202,33 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Remove from processing cache
         processing_cache.pop(user_id, None)
 
-async def handle_ocr_error(error, language_display):
+async def handle_ocr_error(error):
     """Enhanced error handling with better user guidance"""
     error_str = str(error)
-    logger.error(f"OCR Error for {language_display}: {error_str}")
+    logger.error(f"OCR Error: {error_str}")
     
     if "timeout" in error_str.lower():
         return (
-            f"⏰ Processing timeout for {language_display}.\n\n"
+            f"⏰ Processing timeout.\n\n"
             "⚡ *Performance Tips:*\n"
             "• Images under 5MB work best\n"
             "• Crop to essential text area\n"
             "• High contrast improves speed\n"
-            "• Clear, focused images\n"
-            "• Try English for fastest results"
+            "• Clear, focused images"
         )
     elif "no readable text" in error_str.lower():
         return (
-            f"🔍 No readable text found in {language_display}.\n\n"
+            f"🔍 No readable text found.\n\n"
             "🎯 *Quality Tips:*\n"
             "• Ensure text is clear and focused\n"
             "• Good lighting reduces errors\n"
             "• High contrast backgrounds\n"
-            "• Straight, horizontal text\n"
-            "• Choose correct language"
+            "• Straight, horizontal text"
         )
     elif "language" in error_str.lower() and "not installed" in error_str.lower():
-        return f"❌ {language_display} language pack not available. Please try English or another supported language."
+        return f"❌ Language pack not available. Please try another image."
     else:
-        return f"❌ Error processing image in {language_display}. Please try a different image or language."
+        return f"❌ Error processing image. Please try a different image."
 
 async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Enhanced reformatting with better error handling"""
@@ -286,16 +266,16 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Smart parse mode selection
         parse_mode = None
-        if format_type == 'markdown':
+        if format_type == 'code':
             parse_mode = 'MarkdownV2'
         elif format_type == 'html':
             parse_mode = 'HTML'
         
-        # Enhanced keyboard
+        # Enhanced keyboard - removed markdown, added code
         keyboard = [
             [
                 InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{original_message_id}"),
-                InlineKeyboardButton("📋 Markdown", callback_data=f"reformat_markdown_{original_message_id}"),
+                InlineKeyboardButton("💻 Code", callback_data=f"reformat_code_{original_message_id}"),
                 InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{original_message_id}")
             ]
         ]

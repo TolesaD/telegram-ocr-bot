@@ -1,8 +1,10 @@
+# database/mongodb.py
+import os
+import logging
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from datetime import datetime
-import logging
-import os
+import ssl
 
 logger = logging.getLogger(__name__)
 
@@ -14,42 +16,46 @@ class MongoDB:
         self.connect()
     
     def connect(self):
-        """Connect to MongoDB - Railway optimized"""
+        """Connect to MongoDB with enhanced SSL handling"""
         mongodb_uri = os.getenv('MONGODB_URI')
         
-        # Debug logging
         if mongodb_uri:
             logger.info(f"✅ MONGODB_URI found: {mongodb_uri[:20]}...")
         else:
             logger.warning("❌ MONGODB_URI not found in environment variables")
-            logger.warning("💡 Please check Railway Variables tab")
-        
-        if not mongodb_uri:
-            logger.warning("MongoDB URI not configured, using mock database")
+            logger.warning("💡 Please check environment variables or .env file")
             self.setup_mock_database()
             return
         
         try:
-            # Railway environment - use TLS
+            # Explicit SSL settings
             self.client = MongoClient(
                 mongodb_uri,
+                ssl=True,
+                ssl_cert_reqs=ssl.CERT_NONE,  # Use CERT_REQUIRED in production
                 serverSelectionTimeoutMS=10000,
                 connectTimeoutMS=15000,
                 socketTimeoutMS=30000,
                 retryWrites=True,
                 retryReads=True
             )
+            # Test connection
             self.client.admin.command('ping')
-            self.db = self.client.get_database()
-            logger.info("✅ MongoDB connected successfully on Railway")
+            # Get database name from URI or use default
+            db_name = mongodb_uri.split('/')[-1].split('?')[0] or 'telegram_ocr_bot'
+            self.db = self.client[db_name]
+            logger.info("✅ MongoDB connected successfully")
             self.is_mock = False
             
             # Create indexes
             self._create_indexes()
             
-        except Exception as e:
+        except ConnectionFailure as e:
             logger.error(f"❌ MongoDB connection failed: {e}")
             logger.info("🔄 Falling back to mock database")
+            self.setup_mock_database()
+        except Exception as e:
+            logger.error(f"❌ MongoDB setup failed: {e}")
             self.setup_mock_database()
     
     def _create_indexes(self):
@@ -92,7 +98,7 @@ class MongoDB:
                     {'$set': user_data},
                     upsert=True
                 )
-                return result.upserted_id is not None
+                return result.upserted_id is not None or result.modified_count > 0
         except Exception as e:
             logger.error(f"Error inserting user: {e}")
             return False
@@ -149,4 +155,10 @@ class MongoDB:
             return {'total_requests': 0, 'recent_requests': []}
 
 # Database instance
-db = MongoDB()
+try:
+    db = MongoDB()
+except Exception as e:
+    logger.error(f"❌ MongoDB connection failed: {e}")
+    logger.info("🔄 Falling back to mock database")
+    db = MongoDB()
+    db.setup_mock_database()
