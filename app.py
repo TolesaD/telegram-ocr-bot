@@ -21,10 +21,10 @@ load_dotenv()
 
 # Fallback values if environment variables are not set
 FALLBACK_VALUES = {
-    'BOT_TOKEN': '7617054734:AAE9hIDjqgjncA2JR-pOAIb5s_NxD7DEisY',
+    'BOT_TOKEN': '8327516444:AAGblijJShx3Uh9cWU7coADtUl_PnAeDZ5A',
     'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/telegram_ocr_bot?retryWrites=true&w=majority',
-    'SUPPORT_BOT': '@ImageToTextConvertorSupportBot',
-    'CHANNEL': '@ImageToTextConvertor',
+    'SUPPORT_BOT': '@ImageToTextConverterSupportBot',
+    'CHANNEL': '@ImageToTextConverter',
     'ADMIN_IDS': '417079598'
 }
 

@@ -77,8 +77,16 @@ class OCRProcessor:
                 logger.warning(f"Language {lang_code} not available, using English")
                 lang_code = 'eng'
             
+            # Force Amharic for Ethiopic script
+            if script == 'Ethiopic' and 'amh' in available_langs:
+                lang_code = 'amh'
+                logger.info("Forcing Amharic language for Ethiopic script")
+            
             text = await self.extract_with_tesseract_enhanced(processed_image, lang_code)
             text = self.fix_bullet_artifacts(text)
+            
+            # Log raw OCR output for debugging
+            logger.info(f"Raw OCR output: {text[:100]}...")
             
             processing_time = time.time() - start_time
             logger.info("⚡ Tesseract processed in %.2fs", processing_time)
@@ -97,9 +105,13 @@ class OCRProcessor:
                 pytesseract.image_to_osd,
                 image
             )
+            logger.debug(f"OSD output: {osd}")
             for line in osd.split('\n'):
                 if line.startswith('Script:'):
-                    return line.split(':')[1].strip()
+                    script = line.split(':')[1].strip()
+                    logger.info(f"Detected script: {script}")
+                    return script
+            logger.warning("No script detected, defaulting to Latin")
             return 'Latin'
         except Exception as e:
             logger.error(f"Script detection failed: {e}")
@@ -227,7 +239,7 @@ class OCRProcessor:
         try:
             config = '--oem 3 --psm 3 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'
             if lang_code == 'amh':
-                config = '--oem 0 --psm 3 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'
+                config = '--oem 0 --psm 6 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'
             text = pytesseract.image_to_string(
                 image,
                 lang=lang_code,
@@ -264,14 +276,14 @@ class OCRProcessor:
                 image = image.convert('L')
             
             enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(4.0)  # Increased for better text clarity
+            image = enhancer.enhance(2.5)  # Reduced for Amharic
             enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(3.5)
+            image = enhancer.enhance(2.0)  # Reduced for Amharic
             enhancer = ImageEnhance.Brightness(image)
-            image = enhancer.enhance(1.3)
+            image = enhancer.enhance(1.2)  # Adjusted for Amharic
             image = image.filter(ImageFilter.MedianFilter(size=3))
             image = image.filter(ImageFilter.EDGE_ENHANCE)
-            image = ImageOps.autocontrast(image, cutoff=5)
+            image = ImageOps.autocontrast(image, cutoff=3)  # Reduced cutoff
             
             return image
             
