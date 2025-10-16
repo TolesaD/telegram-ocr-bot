@@ -1,4 +1,3 @@
-# app.py
 import os
 import logging
 import asyncio
@@ -22,8 +21,8 @@ load_dotenv()
 # Fallback values if environment variables are not set
 FALLBACK_VALUES = {
     'BOT_TOKEN': '8440918851:AAHFEBmOrZbQjPC7jRu6n9kbez1IxwuwbN8',
-    'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/?retryWrites=true&w=majority',
-    'SUPPORT_BOT': 'ImageToTextConvertorSupportBot',
+    'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/telegram_ocr_bot?retryWrites=true&w=majority',
+    'SUPPORT_BOT': '@ImageToTextConvertorSupportBot',
     'CHANNEL': '@ImageToTextConverter',
     'ADMIN_IDS': '417079598'
 }
@@ -94,9 +93,12 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors gracefully"""
     logger.error(f"Update {update} caused error {context.error}")
 
-async def handle_main_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text from persistent keyboard"""
-    await show_main_menu(update, context)
+    if update.message.text == "Menu":
+        await show_main_menu(update, context)
+    elif update.message.text == "Restart the bot":
+        await start_command(update, context)
 
 def main():
     """Main function"""
@@ -129,7 +131,7 @@ def main():
         application.add_handler(CommandHandler("check", force_check_membership))
         
         application.add_handler(MessageHandler(filters.PHOTO, handle_image))
-        application.add_handler(MessageHandler(filters.Regex('^Main Menu$'), handle_main_menu_text))
+        application.add_handler(MessageHandler(filters.Regex('^(Menu|Restart the bot)$'), handle_menu_text))
         
         # Callback handlers
         callback_patterns = [

@@ -1,7 +1,6 @@
-# handlers/start.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
-from datetime import datetime, timedelta
+from datetime import datetime
 from handlers.menu import show_main_menu
 import config
 import logging
@@ -9,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command with improved channel verification"""
+    """Handle /start command with pinned Restart button and persistent Menu"""
     user = update.effective_user
     
     logger.info(f"🚀 /start from user {user.id} (@{user.username})")
@@ -41,7 +40,6 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
         
         logger.info(f"📊 User {user_id} status: {chat_member.status}")
         
-        # Check if user is a member (not left, kicked, or banned)
         if chat_member.status not in ['left', 'kicked', 'banned']:
             logger.info(f"✅ User {user_id} is a channel member")
             return True
@@ -51,16 +49,10 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
         
     except Exception as e:
         logger.error(f"🚨 Error checking membership: {e}")
-        
-        # Try to verify bot can access the channel
         try:
             chat = await context.bot.get_chat(config.ANNOUNCEMENT_CHANNEL)
             logger.warning(f"⚠️ Bot can access {chat.title} but can't check membership")
-            logger.warning("💡 Make sure bot is admin with 'Ban users' permission")
-            
-            # For production, return False to enforce requirement
             return False
-            
         except Exception as e2:
             logger.error(f"🚨 Bot cannot access channel: {e2}")
             return False
@@ -104,10 +96,8 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"🔄 User {user.id} checking membership...")
     
-    # Get database from bot_data
     db = context.bot_data.get('db')
     
-    # Check membership again
     has_joined = await check_channel_membership(update, context, user.id)
     
     if has_joined:
@@ -127,7 +117,7 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
         )
 
 async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE, user, db=None, from_callback=False):
-    """Process user start after verification"""
+    """Process user start with pinned Restart button and persistent Menu"""
     try:
         user_data = {
             'user_id': user.id,
@@ -144,15 +134,10 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
             }
         }
         
-        # Save user to database if available
         if db:
             try:
                 result = db.insert_user(user_data)
-                
-                if result:
-                    logger.info(f"✅ User {user.id} saved to database")
-                else:
-                    logger.warning(f"⚠️ User {user.id} storage failed")
+                logger.info(f"✅ User {user.id} saved to database: {result}")
             except Exception as e:
                 logger.error(f"❌ Error saving user {user.id}: {e}")
         
@@ -176,28 +161,51 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "• Focused, non-blurry text\n"
         "• High contrast\n"
         "• Crop to text area\n\n"
+        "Use the *Menu* button below or the pinned *Restart the bot* message to navigate! 🎯"
     )
     
-    # Add storage info
     if db and hasattr(db, 'is_mock') and db.is_mock:
         welcome_text += ""
     else:
         welcome_text += "💾 *Storage:* Permanent settings\n\n"
     
-    welcome_text += "Use the menu below to explore! 🎯"
-    
+    # Send welcome message
     if from_callback:
         await update.callback_query.edit_message_text(welcome_text, parse_mode='Markdown')
     else:
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
     
+    # Send pinned "Restart the bot" message
+    restart_message = await update.effective_chat.send_message(
+        "🔄 *Restart the bot*\nClick here to restart the bot at any time!",
+        parse_mode='Markdown'
+    )
+    try:
+        await context.bot.pin_chat_message(
+            chat_id=update.effective_chat.id,
+            message_id=restart_message.message_id,
+            disable_notification=True
+        )
+        logger.info(f"📌 Pinned 'Restart the bot' message for user {user.id}")
+    except Exception as e:
+        logger.error(f"❌ Failed to pin message for user {user.id}: {e}")
+    
+    # Add persistent keyboard with "Menu" button
+    keyboard = [['Menu']]
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        is_persistent=True,
+        one_time_keyboard=False
+    )
+    await update.effective_message.reply_text(
+        "Use the *Menu* button below to navigate.",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+    
     # Show main menu
     await show_main_menu(update, context)
-    
-    # Add persistent keyboard
-    keyboard = [['Main Menu']]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
-    await update.effective_message.reply_text("Use the button for quick access.", reply_markup=reply_markup)
 
 async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Force check channel membership"""
@@ -219,7 +227,6 @@ async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode='Markdown'
         )
 
-# Callback handler for start-related callbacks
 async def handle_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle start-related callbacks"""
     query = update.callback_query

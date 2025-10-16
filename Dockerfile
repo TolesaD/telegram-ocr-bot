@@ -1,52 +1,30 @@
-FROM python:3.11-slim
+FROM python:3.9-slim
 
-# Install system dependencies including Tesseract
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    tesseract-ocr-amh \
-    tesseract-ocr-spa \
-    tesseract-ocr-fra \
-    tesseract-ocr-deu \
-    tesseract-ocr-ita \
-    tesseract-ocr-por \
-    tesseract-ocr-rus \
-    tesseract-ocr-chi-sim \
-    tesseract-ocr-jpn \
-    tesseract-ocr-kor \
-    tesseract-ocr-ara \
-    tesseract-ocr-hin \
-    tesseract-ocr-tur \
-    tesseract-ocr-nld \
-    tesseract-ocr-swe \
-    tesseract-ocr-pol \
-    tesseract-ocr-ukr \
-    tesseract-ocr-ell \
-    tesseract-ocr-bul \
-    tesseract-ocr-ces \
-    tesseract-ocr-dan \
-    tesseract-ocr-fin \
-    tesseract-ocr-heb \
-    tesseract-ocr-hun \
-    tesseract-ocr-ind \
-    tesseract-ocr-nor \
-    tesseract-ocr-ron \
-    tesseract-ocr-srp \
-    tesseract-ocr-slk \
-    tesseract-ocr-slv \
-    tesseract-ocr-tha \
-    tesseract-ocr-vie \
-    && rm -rf /var/lib/apt/lists/*
+     # Install system dependencies
+     RUN apt-get update && apt-get install -y \
+         tesseract-ocr \
+         tesseract-ocr-all \
+         libtesseract-dev \
+         libleptonica-dev \
+         pkg-config \
+         && apt-get clean \
+         && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /app
+     # Set working directory
+     WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+     # Copy requirements
+     COPY requirements.txt .
 
-# Copy application code
-COPY . .
+     # Install Python dependencies
+     RUN pip install --no-cache-dir -r requirements.txt
 
-# Run the application
-CMD ["python", "app.py"]
+     # Copy application code
+     COPY . .
+
+     # Set environment variables
+     ENV PYTHONUNBUFFERED=1
+     ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+
+     # Run the application
+     CMD ["python", "app.py"]
