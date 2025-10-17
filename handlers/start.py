@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command with pinned Restart button and persistent Menu"""
+    """Enhanced /start command with better format explanation and Amharic support"""
     user = update.effective_user
     
     logger.info(f"🚀 /start from user {user.id} (@{user.username})")
@@ -72,11 +72,12 @@ async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     message_text = (
-        "👋 *Welcome to Image-to-Text Converter Bot!*\n\n"
+        "👋 *Welcome to Enhanced OCR Bot!* 📸\n\n"
         "📢 *Join Our Channel First*\n\n"
         "Please join our channel to use this bot:\n"
         "• 🚀 Get updates and new features\n"
         "• 💡 Learn usage tips\n"
+        "• 🌍 Amharic language support\n"
         "• 🔧 Stay informed about maintenance\n\n"
         "*Steps:*\n"
         "1. Click 'Join Announcement Channel'\n"
@@ -129,8 +130,9 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
         )
 
 async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE, user, db=None, from_callback=False):
-    """Process user start with pinned Restart button and persistent Menu"""
+    """Enhanced user start processing with better format explanation"""
     try:
+        # Initialize user with plain text as default format
         user_data = {
             'user_id': user.id,
             'username': user.username,
@@ -141,45 +143,64 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
             'created_at': datetime.now(),
             'updated_at': datetime.now(),
             'settings': {
-                'text_format': 'plain',
+                'text_format': 'plain',  # Default to plain text
+                'language_preference': 'auto',  # Auto-detect language
                 'updated_at': datetime.now()
             }
         }
         
         if db:
             try:
-                result = db.insert_user(user_data)
-                logger.info(f"✅ User {user.id} saved to database: {result}")
+                # Check if user exists, update if they do
+                existing_user = db.get_user(user.id)
+                if existing_user:
+                    # Update existing user's last active time
+                    db.update_user_settings(user.id, {'last_active': datetime.now()})
+                    logger.info(f"✅ Updated existing user {user.id}")
+                else:
+                    # Insert new user
+                    result = db.insert_user(user_data)
+                    logger.info(f"✅ New user {user.id} saved to database")
             except Exception as e:
                 logger.error(f"❌ Error saving user {user.id}: {e}")
         
     except Exception as e:
         logger.error(f"❌ Error processing user {user.id}: {e}")
     
+    # Enhanced welcome message with clear format explanation
     welcome_text = (
-        f"🎉 *Welcome {user.first_name}!*\n\n"
-        "🤖 *Image-to-Text Converter Bot*\n\n"
-        "✨ *Features:*\n"
-        "• 🚀 Optimized text extraction\n"
-        "• 🔍 Supports over 100 languages automatically\n"
-        "• 📝 Multiple text formats\n"
+        f"🎉 *Welcome {user.first_name}!* 🌍\n\n"
+        "🤖 *Enhanced OCR Bot with Amharic Support*\n\n"
+        "✨ *Enhanced Features:*\n"
+        "• 🚀 Advanced text extraction\n"
+        "• 🌍 **Amharic language support**\n"
+        "• 📸 Blurry image processing\n"
+        "• 💬 **Default: Plain Text** (clean & readable)\n"
+        "• 📋 **HTML Format** (copy-friendly)\n"
+        "• 🔤 Auto language detection\n"
         "• 💾 Your preferences saved\n\n"
         "📸 *How to use:*\n"
         "1. Send me any image with text\n"
         "2. I'll extract and format the text\n"
-        "3. Choose your preferred format\n\n"
+        "3. Choose between formats:\n"
+        "   • 📄 **Plain Text** (default, best for reading)\n"
+        "   • 🌐 **HTML** (preserves formatting, easy to copy)\n\n"
+        "🌍 *Amharic Support:*\n"
+        "• Send Amharic text images\n"
+        "• Automatic script detection\n"
+        "• Optimized for Ethiopic characters\n\n"
         "💡 *For best results:*\n"
         "• Clear, well-lit images\n"
         "• Focused, non-blurry text\n"
         "• High contrast\n"
-        "• Crop to text area\n\n"
+        "• Horizontal text alignment\n\n"
         "Use the menu below or the pinned message to explore! 🎯"
     )
     
     if db and hasattr(db, 'is_mock') and db.is_mock:
-        welcome_text += ""
+        welcome_text += "\n\n⚠️ *Note:* Using temporary storage (data resets on restart)"
     else:
-        welcome_text += "💾 *Storage:* Permanent settings\n\n"
+        welcome_text += "\n\n💾 *Storage:* Your preferences are saved permanently"
     
     # Send welcome message
     if from_callback:
@@ -188,10 +209,10 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await update.effective_message.reply_text(welcome_text, parse_mode='Markdown')
     
     # Send pinned "Restart the bot" message with clickable button
-    keyboard = [[InlineKeyboardButton("🔄 Restart the bot", callback_data="restart_bot")]]
+    keyboard = [[InlineKeyboardButton("🔄 Restart Bot", callback_data="restart_bot")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     restart_message = await update.effective_chat.send_message(
-        "🔄 *Restart the bot*\nClick the button to restart the bot at any time!",
+        "🔄 *Quick Restart*\nClick below to restart the bot anytime!",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -201,24 +222,28 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
             message_id=restart_message.message_id,
             disable_notification=True
         )
-        logger.info(f"📌 Pinned 'Restart the bot' message for user {user.id}")
+        logger.info(f"📌 Pinned restart message for user {user.id}")
     except Exception as e:
         logger.error(f"❌ Failed to pin message for user {user.id}: {e}")
     
-    # Add persistent keyboard with multiple menu buttons
+    # Enhanced persistent keyboard with better labels
     keyboard = [
         ['📸 Convert Image', '⚙️ Settings'],
-        ['📊 Statistics', '❓ Help']
+        ['📊 Statistics', '❓ Help'],
+        ['🔄 Restart Bot']
     ]
     reply_markup = ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
         is_persistent=True,
-        one_time_keyboard=False
+        one_time_keyboard=False,
+        input_field_placeholder='Choose an option or send an image...'
     )
+    
     await update.effective_message.reply_text(
-        "Use the buttons below to navigate the menu.",
-        reply_markup=reply_markup
+        "📱 *Use the menu below:*\n• Send images directly\n• Or use buttons to navigate",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
     
     # Show main menu
@@ -234,13 +259,14 @@ async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_T
     if has_joined:
         await update.effective_message.reply_text(
             "✅ *Channel Membership Verified!*\n\n"
-            "You are a confirmed member. Thank you! 🎉",
+            "You are a confirmed member. Thank you! 🎉\n\n"
+            "You can now use all features including Amharic text extraction.",
             parse_mode='Markdown'
         )
     else:
         await update.effective_message.reply_text(
             "❌ *Channel Membership Required!*\n\n"
-            "Please join our channel and use `/start` to verify.",
+            "Please join our channel and use `/start` to verify and access all features.",
             parse_mode='Markdown'
         )
 
@@ -252,5 +278,40 @@ async def handle_start_callback(update: Update, context: ContextTypes.DEFAULT_TY
     if query.data == "check_membership":
         await handle_membership_check(update, context)
     elif query.data == "restart_bot":
-        await query.answer("🔄 Restarting the bot...")
+        await query.answer("🔄 Restarting bot...")
         await start_command(update, context)
+
+def get_user_settings(db, user_id):
+    """Get user settings with safe defaults"""
+    try:
+        if db and hasattr(db, 'get_user'):
+            user = db.get_user(user_id)
+            if user and 'settings' in user:
+                return user['settings']
+    except Exception as e:
+        logger.error(f"Error getting settings for user {user_id}: {e}")
+    
+    # Return safe defaults
+    return {
+        'text_format': 'plain',  # Default to plain text
+        'language_preference': 'auto',
+        'updated_at': datetime.now()
+    }
+
+def update_user_settings(db, user_id, settings_update):
+    """Update user settings safely"""
+    try:
+        if db and hasattr(db, 'update_user_settings'):
+            # Get current settings first
+            current_settings = get_user_settings(db, user_id)
+            # Merge with updates
+            updated_settings = {**current_settings, **settings_update, 'updated_at': datetime.now()}
+            # Save to database
+            success = db.update_user_settings(user_id, updated_settings)
+            if success:
+                logger.info(f"✅ Updated settings for user {user_id}: {settings_update}")
+                return True
+    except Exception as e:
+        logger.error(f"❌ Error updating settings for user {user_id}: {e}")
+    
+    return False

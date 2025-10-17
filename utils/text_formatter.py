@@ -6,26 +6,38 @@ class TextFormatter:
     
     @staticmethod
     def format_plain(text):
-        """Format text as plain text with structure preservation"""
+        """
+        Format as plain text with preserved structure
+        - Maintains original line breaks and spacing
+        - Preserves bullets and special characters
+        - Clean but minimal processing
+        """
         if not text:
             return ""
         
-        # Preserve original line breaks and spacing
+        # Preserve all original line breaks and structure
         lines = text.split('\n')
         
-        # Clean each line but maintain original structure
+        # Clean each line minimally
         cleaned_lines = []
         for line in lines:
-            # Remove excessive internal whitespace but preserve line structure
+            # Remove excessive internal whitespace but preserve indentation
             cleaned_line = ' '.join(line.split())
             cleaned_lines.append(cleaned_line)
         
-        # Join back with original line breaks
-        return '\n'.join(cleaned_lines)
+        # Join back with original line structure
+        formatted_text = '\n'.join(cleaned_lines)
+        
+        return formatted_text
     
     @staticmethod
     def format_html(text):
-        """Enhanced HTML formatting with copy-friendly output"""
+        """
+        Format as copy-friendly HTML
+        - Uses <pre> tag for perfect formatting preservation
+        - Easily copy-pasteable
+        - Telegram compatible
+        """
         if not text:
             return ""
         
@@ -33,25 +45,11 @@ class TextFormatter:
             # Escape HTML entities
             escaped_text = html.escape(text)
             
-            # Process lines for better structure
-            lines = escaped_text.split('\n')
-            html_lines = []
+            # Use <pre> tag for perfect formatting preservation
+            # This makes text easily copyable while preserving all formatting
+            html_text = f"<pre>{escaped_text}</pre>"
             
-            for i, line in enumerate(lines):
-                line = line.strip()
-                if line:
-                    # For better copy-paste, use simple formatting
-                    # Use monospace font and preserve spaces
-                    html_lines.append(f"<code>{line}</code>")
-                else:
-                    # Preserve paragraph breaks
-                    html_lines.append("<br>")
-            
-            # Use <pre> tag for better formatting but make it copy-friendly
-            formatted_text = '\n'.join(html_lines)
-            
-            # Return with minimal styling for easy copying
-            return formatted_text
+            return html_text
             
         except Exception as e:
             print(f"HTML formatting error: {e}")
@@ -60,7 +58,10 @@ class TextFormatter:
     
     @staticmethod
     def format_text(text, format_type='plain'):
-        """Enhanced text formatting with better error handling"""
+        """
+        Main formatting function
+        Defaults to plain text, with HTML as copiable alternative
+        """
         if not text:
             return ""
             
@@ -68,14 +69,12 @@ class TextFormatter:
         
         try:
             if format_type == 'html':
-                formatted = TextFormatter.format_html(text)
-                # Ensure the HTML is copy-friendly
-                return formatted
+                return TextFormatter.format_html(text)
             else:  # plain or any other type
                 return TextFormatter.format_plain(text)
         except Exception as e:
             print(f"Formatting error: {e}")
-            return text
+            return text  # Return original text as fallback
     
     @staticmethod
     def split_long_message(text, max_length=4000):
@@ -83,22 +82,23 @@ class TextFormatter:
         if len(text) <= max_length:
             return [text]
         
+        # Split by paragraphs to maintain readability
+        paragraphs = text.split('\n\n')
         parts = []
-        while text:
-            if len(text) <= max_length:
-                parts.append(text)
-                break
-            
-            # Find the last newline within the limit
-            split_pos = text.rfind('\n', 0, max_length)
-            if split_pos == -1:
-                # No newline found, split at space
-                split_pos = text.rfind(' ', 0, max_length)
-            if split_pos == -1:
-                # No space found, force split
-                split_pos = max_length
-            
-            parts.append(text[:split_pos])
-            text = text[split_pos:].lstrip()
+        current_part = ""
+        
+        for paragraph in paragraphs:
+            # If adding this paragraph would exceed limit, start new part
+            if len(current_part) + len(paragraph) + 2 > max_length and current_part:
+                parts.append(current_part.strip())
+                current_part = paragraph
+            else:
+                if current_part:
+                    current_part += '\n\n' + paragraph
+                else:
+                    current_part = paragraph
+        
+        if current_part:
+            parts.append(current_part.strip())
         
         return parts

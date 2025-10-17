@@ -7,42 +7,14 @@ import io
 import os
 import pytesseract
 from concurrent.futures import ThreadPoolExecutor
-from ocr_engine.language_support import get_tesseract_code, get_language_family, is_complex_script
-
-# Try to import OpenCV headless
-try:
-    import cv2
-    import numpy as np
-    OPENCV_AVAILABLE = True
-    logger = logging.getLogger(__name__)
-    logger.info("✅ OpenCV headless loaded successfully")
-except ImportError as e:
-    OPENCV_AVAILABLE = False
-    logger.warning(f"⚠️ OpenCV headless not available: {e}. Using PIL fallback.")
+from ocr_engine.language_support import get_tesseract_code, get_amharic_config, is_amharic_character
 
 logger = logging.getLogger(__name__)
-
-# Enhanced thread pool for better performance
 thread_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ocr_")
 
 class OCRProcessor:
     def __init__(self):
-        self.engines = {}
-        self.cache = {}
-        self.setup_engines()
-    
-    def setup_engines(self):
-        """Setup available OCR engines with enhanced error handling"""
-        try:
-            if self.setup_tesseract():
-                self.engines['tesseract'] = {
-                    'name': 'Tesseract',
-                    'priority': 1,
-                    'languages': self.get_tesseract_languages()
-                }
-            logger.info("🚀 Enhanced OCR Engines loaded: %s", list(self.engines.keys()))
-        except Exception as e:
-            logger.error("Error setting up OCR engines: %s", e)
+        self.setup_tesseract()
     
     def setup_tesseract(self):
         """Setup Tesseract with enhanced configuration"""
@@ -54,145 +26,144 @@ class OCRProcessor:
             logger.error(f"Tesseract initialization failed: {e}")
             return False
     
-    def get_tesseract_languages(self):
-        """Get available Tesseract languages with caching"""
-        try:
-            available_langs = pytesseract.get_languages()
-            logger.info("🌍 Available Tesseract languages: %s", available_langs)
-            return available_langs
-        except Exception as e:
-            logger.error("Error getting Tesseract languages: %s", e)
-            return ['eng']
-    
     async def extract_text_optimized(self, image_bytes, language=None):
-        """Enhanced text extraction optimized for Amharic and blurry images"""
+        """Enhanced text extraction preserving original formatting"""
         start_time = time.time()
         
         try:
-            # Detect script first to determine optimal processing
-            initial_image = Image.open(io.BytesIO(image_bytes)).convert('L')
-            script = await self.detect_script(initial_image)
-            logger.info(f"📝 Detected script: {script}")
-            
-            # Apply script-specific preprocessing
+            # Use gentle preprocessing to preserve original characters
             processed_image = await asyncio.get_event_loop().run_in_executor(
                 thread_pool,
-                self.script_specific_preprocessing,
-                image_bytes,
-                script
+                self.preservative_preprocessing,
+                image_bytes
             )
             
-            # Determine language based on script
-            lang_code = self.get_lang_from_script(script)
-            
-            # Enhanced Amharic detection
-            if script == 'Ethiopic' or 'amh' in str(script).lower() or lang_code == 'am':
-                lang_code = 'am'
-                logger.info("🔤 Using enhanced Amharic processing")
-                
-                # Try multiple Amharic-specific strategies
-                text = await self.amharic_specific_ocr(processed_image, image_bytes)
-            else:
-                # Standard multi-strategy OCR for other languages
-                available_langs = self.get_tesseract_languages()
-                text = await self.multi_strategy_ocr(processed_image, lang_code, available_langs, image_bytes, script)
+            # Try Amharic first, then fallback to auto-detection
+            text = await self.try_amharic_first(processed_image, image_bytes)
             
             processing_time = time.time() - start_time
-            logger.info(f"⚡ OCR completed in {processing_time:.2f}s")
             
-            if not text or len(text.strip()) < 3:
-                return "🔍 No readable text found. Please try a clearer image with better lighting and contrast."
+            if not text or len(text.strip()) < 2:
+                return "🔍 No readable text found. Please ensure:\n• Clear, high-contrast image\n• Proper lighting\n• Text is horizontal and focused"
             
-            return text
+            # Enhanced cleaning that preserves original formatting
+            cleaned_text = self.preservative_clean_text(text)
+            
+            logger.info(f"✅ OCR completed in {processing_time:.2f}s")
+            return cleaned_text
             
         except Exception as e:
             logger.error(f"OCR processing failed: {e}")
-            return f"❌ OCR processing error. Please try a different image or check image quality."
+            return f"❌ Processing error. Please try a clearer image."
     
-    async def amharic_specific_ocr(self, processed_image, original_image_bytes):
-        """Specialized OCR processing for Amharic text"""
-        strategies = []
+    async def try_amharic_first(self, processed_image, original_image_bytes):
+        """Try Amharic OCR first, then fallback to other languages"""
+        strategies = [
+            self.amharic_high_confidence,
+            self.amharic_standard,
+            self.amharic_legacy,
+            self.auto_detect_script
+        ]
         
-        # Strategy 1: Gentle preprocessing with Amharic config
-        gentle_image = await asyncio.get_event_loop().run_in_executor(
-            thread_pool,
-            self.gentle_amharic_preprocessing,
-            original_image_bytes
-        )
-        strategies.append(('gentle_amharic', gentle_image, '--oem 1 --psm 6'))
-        
-        # Strategy 2: Medium preprocessing
-        medium_image = await asyncio.get_event_loop().run_in_executor(
-            thread_pool,
-            self.medium_amharic_preprocessing,
-            original_image_bytes
-        )
-        strategies.append(('medium_amharic', medium_image, '--oem 1 --psm 4'))
-        
-        # Strategy 3: Original processed image
-        strategies.append(('standard_amharic', processed_image, '--oem 1 --psm 3'))
-        
-        # Strategy 4: For blurry Amharic images
-        blurry_image = await asyncio.get_event_loop().run_in_executor(
-            thread_pool,
-            self.blurry_amharic_preprocessing,
-            original_image_bytes
-        )
-        strategies.append(('blurry_amharic', blurry_image, '--oem 1 --psm 6 -c textord_min_linesize=2.5'))
-        
-        best_result = ""
-        best_confidence = 0
-        
-        for strategy_name, strategy_image, config in strategies:
+        for strategy in strategies:
             try:
-                text = await self.extract_with_tesseract_custom(strategy_image, 'amh+amh_vert+eng', config)
-                confidence = self.calculate_amharic_confidence(text)
-                
-                logger.info(f"🔤 Amharic strategy '{strategy_name}': confidence {confidence:.1f}%")
-                
-                if confidence > best_confidence:
-                    best_result = text
-                    best_confidence = confidence
-                    
-                    # Early exit if we get very good confidence
-                    if confidence > 80:
-                        break
+                text = await strategy(processed_image, original_image_bytes)
+                if text and len(text.strip()) > 10:
+                    amharic_chars = sum(1 for c in text if is_amharic_character(c))
+                    if amharic_chars > 0:  # Found Amharic characters
+                        logger.info(f"✅ Strategy {strategy.__name__} found Amharic text")
+                        return text
             except Exception as e:
-                logger.warning(f"Amharic strategy {strategy_name} failed: {e}")
+                logger.warning(f"Strategy {strategy.__name__} failed: {e}")
                 continue
         
-        if best_result and best_confidence > 30:
-            return self.clean_amharic_text(best_result)
-        else:
-            # Fallback to English if Amharic fails completely
-            logger.warning("Amharic OCR failed, falling back to English")
-            fallback_text = await self.extract_with_tesseract_enhanced(processed_image, 'eng', 'fallback')
-            return f"⚠️ Amharic text not clearly recognized. English fallback:\n\n{fallback_text}"
+        # If no Amharic found, try English
+        return await self.english_fallback(processed_image)
     
-    def calculate_amharic_confidence(self, text):
-        """Calculate confidence specifically for Amharic text"""
-        if not text or len(text.strip()) < 3:
-            return 0
+    async def amharic_high_confidence(self, processed_image, original_image_bytes):
+        """High confidence Amharic processing"""
+        # Try multiple Amharic-specific configurations
+        configs = [
+            get_amharic_config(),
+            '--oem 1 --psm 6 -c preserve_interword_spaces=1',
+            '--oem 1 --psm 4 -c textord_old_baselines=1',
+            '--oem 1 --psm 3 -c textord_force_make_proportional=0'
+        ]
         
-        # Count Amharic Unicode characters (Ethiopic block: U+1200 to U+137F)
-        amharic_chars = sum(1 for c in text if '\u1200' <= c <= '\u137f')
-        total_chars = len(text.strip())
+        best_text = ""
+        for config in configs:
+            try:
+                text = await self.extract_with_tesseract(processed_image, 'amh+amh_vert', config)
+                if text and len(text.strip()) > len(best_text.strip()):
+                    best_text = text
+            except:
+                continue
         
-        if total_chars == 0:
-            return 0
-        
-        # Base confidence on percentage of Amharic characters
-        amharic_ratio = (amharic_chars / total_chars) * 100
-        
-        # Also consider overall text quality
-        readable_chars = sum(1 for c in text if c.isalnum() or c.isspace() or '\u1200' <= c <= '\u137f')
-        quality_ratio = (readable_chars / total_chars) * 100
-        
-        final_confidence = (amharic_ratio * 0.7) + (quality_ratio * 0.3)
-        return min(final_confidence, 100)
+        return best_text
     
-    def clean_amharic_text(self, text):
-        """Clean and validate Amharic text"""
+    async def amharic_standard(self, processed_image, original_image_bytes):
+        """Standard Amharic processing"""
+        return await self.extract_with_tesseract(processed_image, 'amh', '--oem 1 --psm 6')
+    
+    async def amharic_legacy(self, processed_image, original_image_bytes):
+        """Legacy engine for Amharic"""
+        return await self.extract_with_tesseract(processed_image, 'amh', '--oem 0 --psm 6')
+    
+    async def auto_detect_script(self, processed_image, original_image_bytes):
+        """Auto-detect script and language"""
+        try:
+            # Get available languages
+            available_langs = pytesseract.get_languages()
+            
+            # Try script detection
+            script = await self.detect_script(processed_image)
+            logger.info(f"📜 Detected script: {script}")
+            
+            if script == 'Ethiopic':
+                return await self.extract_with_tesseract(processed_image, 'amh', '--oem 1 --psm 6')
+            else:
+                # Auto language detection
+                return await self.extract_with_tesseract(processed_image, 'osd', '--oem 1 --psm 3')
+        except:
+            return await self.english_fallback(processed_image)
+    
+    async def english_fallback(self, processed_image):
+        """Fallback to English"""
+        return await self.extract_with_tesseract(processed_image, 'eng', '--oem 3 --psm 6')
+    
+    def preservative_preprocessing(self, image_bytes):
+        """
+        Gentle preprocessing that preserves original character shapes
+        and doesn't alter the image too much
+        """
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            
+            # Convert to grayscale if needed, but preserve color if it helps
+            if image.mode != 'L':
+                image = image.convert('L')
+            
+            # Very gentle contrast enhancement
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.3)  # Minimal contrast boost
+            
+            # Mild sharpness enhancement
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(1.2)  # Minimal sharpening
+            
+            # Gentle noise reduction only if needed
+            image = image.filter(ImageFilter.MedianFilter(size=1))
+            
+            return image
+            
+        except Exception as e:
+            logger.error(f"Preprocessing failed: {e}")
+            return Image.open(io.BytesIO(image_bytes)).convert('L')
+    
+    def preservative_clean_text(self, text):
+        """
+        Clean text while preserving original formatting, bullets, and special characters
+        """
         if not text:
             return ""
         
@@ -200,249 +171,66 @@ class OCRProcessor:
         cleaned_lines = []
         
         for line in lines:
-            line = line.strip()
-            if line:
-                # Remove lines that are mostly non-Amharic
-                amharic_chars = sum(1 for c in line if '\u1200' <= c <= '\u137f')
-                if amharic_chars >= 1 or len(line) > 10:  # Keep lines with Amharic chars or reasonable length
-                    cleaned_lines.append(line)
+            # Preserve the original line structure
+            original_line = line.rstrip()
+            
+            if original_line:
+                # Fix common OCR artifacts while preserving meaningful characters
+                cleaned_line = self.fix_ocr_artifacts(original_line)
+                cleaned_lines.append(cleaned_line)
+            else:
+                # Preserve empty lines for paragraph separation
+                cleaned_lines.append('')
         
+        # Join back with original line breaks
         result = '\n'.join(cleaned_lines)
         
-        if not result.strip():
-            return "🔍 Amharic text not clearly recognized. Please ensure:\n• Clear, high-contrast image\n• Proper lighting\n• Horizontal text alignment\n• Minimal background noise"
+        # Remove trailing whitespace but preserve internal structure
+        return result.strip()
+    
+    def fix_ocr_artifacts(self, line):
+        """Fix common OCR artifacts while preserving original characters"""
+        if not line:
+            return line
         
-        return result
-    
-    async def multi_strategy_ocr(self, processed_image, lang_code, available_langs, original_image_bytes, script):
-        """Multi-strategy OCR for non-Amharic languages"""
-        strategies = [
-            ('standard', processed_image, '--oem 3 --psm 3'),
-            ('single_block', processed_image, '--oem 3 --psm 6'),
-            ('single_line', processed_image, '--oem 3 --psm 7'),
-            ('blurry_fallback', processed_image, '--oem 3 --psm 4')
-        ]
+        # Fix bullet artifacts - replace common misrecognitions with proper bullets
+        bullet_replacements = {
+            'e ': '• ',
+            'o ': '• ',
+            '0 ': '• ',
+            'c ': '• ',
+            'E ': '• ',
+            'O ': '• ',
+            'C ': '• ',
+            'point ': '• ',
+            '° ': '• ',
+            '· ': '• ',
+        }
         
-        best_result = ""
-        best_confidence = 0
+        # Check if line starts with a bullet pattern
+        for wrong_bullet, correct_bullet in bullet_replacements.items():
+            if line.startswith(wrong_bullet):
+                line = line.replace(wrong_bullet, correct_bullet, 1)
+                break
         
-        for strategy_name, strategy_image, config in strategies:
-            try:
-                tesseract_lang = get_tesseract_code(lang_code)
-                if tesseract_lang not in available_langs:
-                    tesseract_lang = 'eng'
-                
-                text = await self.extract_with_tesseract_custom(strategy_image, tesseract_lang, config)
-                confidence = self.estimate_confidence(text)
-                
-                if confidence > best_confidence:
-                    best_result = text
-                    best_confidence = confidence
-                    
-                    if confidence > 75:
-                        break
-            except Exception as e:
-                continue
+        # Fix other common OCR issues while preserving Amharic and special chars
+        fixes = {
+            '|': 'I',  # But only if it makes sense in context
+            '1': 'I',  # Context-dependent
+            '5': 'S',
+            '0': 'O',
+        }
         
-        return best_result if best_result else "No readable text found."
-    
-    def script_specific_preprocessing(self, image_bytes, script):
-        """Apply preprocessing optimized for specific script types"""
-        try:
-            if script == 'Ethiopic' or script == 'Amharic':
-                # Gentle preprocessing for Amharic - preserve character details
-                return self.gentle_amharic_preprocessing(image_bytes)
-            elif script in ['Arabic', 'Hebrew']:
-                # Right-to-left scripts need special handling
-                return self.rtl_script_preprocessing(image_bytes)
-            else:
-                # Standard preprocessing for Latin, Cyrillic, etc.
-                return self.standard_preprocessing(image_bytes)
-        except Exception as e:
-            logger.error(f"Script-specific preprocessing failed: {e}")
-            return self.standard_preprocessing(image_bytes)
-    
-    def gentle_amharic_preprocessing(self, image_bytes):
-        """Gentle preprocessing optimized for Amharic characters"""
-        try:
-            if OPENCV_AVAILABLE:
-                # Use OpenCV for Amharic-specific preprocessing
-                nparr = np.frombuffer(image_bytes, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                
-                if image is None:
-                    return self.pil_amharic_preprocessing(image_bytes)
-                
-                # Convert to grayscale
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                
-                # Gentle denoising for Amharic (preserve character details)
-                denoised = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
-                
-                # Mild contrast enhancement
-                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-                enhanced = clahe.apply(denoised)
-                
-                # Very mild sharpening
-                kernel = np.array([[0, -0.5, 0], [-0.5, 3, -0.5], [0, -0.5, 0]])
-                sharpened = cv2.filter2D(enhanced, -1, kernel)
-                
-                # Adaptive threshold for Amharic
-                binary = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                             cv2.THRESH_BINARY, 11, 2)
-                
-                pil_image = Image.fromarray(binary)
-                return pil_image
-            else:
-                return self.pil_amharic_preprocessing(image_bytes)
-                
-        except Exception as e:
-            logger.error(f"Gentle Amharic preprocessing failed: {e}")
-            return self.pil_amharic_preprocessing(image_bytes)
-    
-    def pil_amharic_preprocessing(self, image_bytes):
-        """PIL-based preprocessing for Amharic"""
-        try:
-            image = Image.open(io.BytesIO(image_bytes)).convert('L')
-            
-            # Mild contrast enhancement
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(1.5)
-            
-            # Mild sharpness enhancement
-            enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(1.3)
-            
-            # Gentle noise reduction
-            image = image.filter(ImageFilter.MedianFilter(size=3))
-            
-            return image
-        except Exception as e:
-            logger.error(f"PIL Amharic preprocessing failed: {e}")
-            return Image.open(io.BytesIO(image_bytes)).convert('L')
-    
-    def medium_amharic_preprocessing(self, image_bytes):
-        """Medium preprocessing for challenging Amharic images"""
-        try:
-            if OPENCV_AVAILABLE:
-                nparr = np.frombuffer(image_bytes, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                
-                if image is None:
-                    return self.pil_amharic_preprocessing(image_bytes)
-                
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                
-                # Medium denoising
-                denoised = cv2.fastNlMeansDenoising(gray, None, h=15, templateWindowSize=7, searchWindowSize=21)
-                
-                # Medium contrast enhancement
-                clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-                enhanced = clahe.apply(denoised)
-                
-                # Medium sharpening
-                kernel = np.array([[-0.5, -0.5, -0.5], [-0.5, 5, -0.5], [-0.5, -0.5, -0.5]])
-                sharpened = cv2.filter2D(enhanced, -1, kernel)
-                
-                # Otsu's thresholding
-                _, binary = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                
-                pil_image = Image.fromarray(binary)
-                return pil_image
-            else:
-                return self.pil_amharic_preprocessing(image_bytes)
-        except Exception as e:
-            logger.error(f"Medium Amharic preprocessing failed: {e}")
-            return self.pil_amharic_preprocessing(image_bytes)
-    
-    def blurry_amharic_preprocessing(self, image_bytes):
-        """Special preprocessing for blurry Amharic images"""
-        try:
-            if OPENCV_AVAILABLE:
-                nparr = np.frombuffer(image_bytes, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                
-                if image is None:
-                    return self.pil_amharic_preprocessing(image_bytes)
-                
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                
-                # Stronger denoising for blurry images
-                denoised = cv2.fastNlMeansDenoising(gray, None, h=20, templateWindowSize=9, searchWindowSize=21)
-                
-                # Strong contrast enhancement for blurry text
-                clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8,8))
-                enhanced = clahe.apply(denoised)
-                
-                # Strong sharpening for blurry images
-                kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-                sharpened = cv2.filter2D(enhanced, -1, kernel)
-                
-                # Morphological operations to connect broken characters
-                kernel = np.ones((2,2), np.uint8)
-                closed = cv2.morphologyEx(sharpened, cv2.MORPH_CLOSE, kernel)
-                
-                # Adaptive threshold for blurry text
-                binary = cv2.adaptiveThreshold(closed, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                             cv2.THRESH_BINARY, 15, 5)
-                
-                pil_image = Image.fromarray(binary)
-                return pil_image
-            else:
-                image = Image.open(io.BytesIO(image_bytes)).convert('L')
-                # Enhanced preprocessing for blurry images using PIL
-                enhancer = ImageEnhance.Contrast(image)
-                image = enhancer.enhance(2.5)
-                enhancer = ImageEnhance.Sharpness(image)
-                image = enhancer.enhance(3.0)
-                image = image.filter(ImageFilter.SHARPEN)
-                return image
-        except Exception as e:
-            logger.error(f"Blurry Amharic preprocessing failed: {e}")
-            return self.pil_amharic_preprocessing(image_bytes)
-    
-    def standard_preprocessing(self, image_bytes):
-        """Standard preprocessing for non-Amharic scripts"""
-        try:
-            image = Image.open(io.BytesIO(image_bytes)).convert('L')
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(2.0)
-            enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(2.0)
-            return image
-        except Exception as e:
-            logger.error(f"Standard preprocessing failed: {e}")
-            return Image.open(io.BytesIO(image_bytes)).convert('L')
-    
-    def rtl_script_preprocessing(self, image_bytes):
-        """Preprocessing for right-to-left scripts"""
-        try:
-            image = Image.open(io.BytesIO(image_bytes)).convert('L')
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(1.8)
-            enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(1.5)
-            return image
-        except Exception as e:
-            logger.error(f"RTL preprocessing failed: {e}")
-            return Image.open(io.BytesIO(image_bytes)).convert('L')
-    
-    def estimate_confidence(self, text):
-        """Estimate confidence based on text quality"""
-        if not text or len(text.strip()) < 3:
-            return 0
+        # Apply fixes carefully - only if they improve readability
+        for wrong, correct in fixes.items():
+            # Only replace if it's likely a misrecognition
+            if len(line) > 10:  # Only in longer text to avoid false positives
+                line = line.replace(wrong, correct)
         
-        readable_chars = sum(1 for c in text if c.isalnum() or c.isspace() or c in ',.!?;:-()[]{}')
-        total_chars = len(text)
-        
-        if total_chars == 0:
-            return 0
-        
-        confidence = (readable_chars / total_chars) * 100
-        return min(confidence, 100)
+        return line
     
     async def detect_script(self, image):
-        """Enhanced script detection using Tesseract OSD"""
+        """Detect script using Tesseract"""
         loop = asyncio.get_event_loop()
         try:
             osd = await loop.run_in_executor(
@@ -453,105 +241,40 @@ class OCRProcessor:
             )
             for line in osd.split('\n'):
                 if line.startswith('Script:'):
-                    script = line.split(':')[1].strip()
-                    logger.info(f"📜 OSD detected script: {script}")
-                    return script
+                    return line.split(':')[1].strip()
             return 'Latin'
         except Exception as e:
-            logger.warning(f"Script detection failed: {e}, defaulting to Latin")
+            logger.warning(f"Script detection failed: {e}")
             return 'Latin'
     
-    def get_lang_from_script(self, script):
-        """Map script to language code"""
-        mapping = {
-            'Latin': 'eng',
-            'Cyrillic': 'rus',
-            'Arabic': 'ara',
-            'Devanagari': 'hin',
-            'HanS': 'chi_sim',
-            'Hangul': 'kor',
-            'Japanese': 'jpn',
-            'Tamil': 'tam',
-            'Telugu': 'tel',
-            'Kannada': 'kan',
-            'Malayalam': 'mal',
-            'Gujarati': 'guj',
-            'Gurmukhi': 'pan',
-            'Bengali': 'ben',
-            'Amharic': 'amh',
-            'Ethiopic': 'amh',
-            'Hebrew': 'heb',
-            'Armenian': 'hye',
-            'Georgian': 'kat',
-            'Thai': 'tha',
-            'Lao': 'lao',
-            'Khmer': 'khm',
-            'Myanmar': 'mya',
-            'Sinhala': 'sin',
-            'Greek': 'ell',
-            'Oriya': 'ori',
-            'Sindhi': 'snd',
-            'Tibetan': 'bod'
-        }
-        return mapping.get(script, 'eng')
-    
-    async def extract_with_tesseract_enhanced(self, image, lang_code, strategy='standard'):
-        """Enhanced Tesseract extraction"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            thread_pool,
-            self._tesseract_extract_enhanced,
-            image,
-            lang_code,
-            strategy
-        )
-    
-    async def extract_with_tesseract_custom(self, image, lang_code, custom_config):
-        """Custom Tesseract extraction"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            thread_pool,
-            self._tesseract_extract_custom,
-            image,
-            lang_code,
-            custom_config
-        )
-    
-    def _tesseract_extract_enhanced(self, image, lang_code, strategy):
+    async def extract_with_tesseract(self, image, lang, config):
         """Extract text with Tesseract"""
+        loop = asyncio.get_event_loop()
         try:
-            configs = {
-                'standard': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
-                'fallback': '--oem 3 --psm 6 -c preserve_interword_spaces=1'
-            }
-            
-            config = configs.get(strategy, configs['standard'])
-            
+            text = await loop.run_in_executor(
+                thread_pool,
+                self._tesseract_extract,
+                image,
+                lang,
+                config
+            )
+            return text
+        except Exception as e:
+            logger.error(f"Tesseract extraction failed for {lang}: {e}")
+            return ""
+    
+    def _tesseract_extract(self, image, lang, config):
+        """Synchronous Tesseract extraction"""
+        try:
             text = pytesseract.image_to_string(
                 image,
-                lang=lang_code,
+                lang=lang,
                 config=config,
                 timeout=30
             )
-            
-            return text.strip() if text else ""
-            
+            return text
         except Exception as e:
-            logger.error(f"Tesseract error: {e}")
-            return ""
-    
-    def _tesseract_extract_custom(self, image, lang_code, custom_config):
-        """Custom Tesseract extraction"""
-        try:
-            text = pytesseract.image_to_string(
-                image,
-                lang=lang_code,
-                config=custom_config,
-                timeout=30
-            )
-            return text.strip() if text else ""
-        except Exception as e:
-            logger.error(f"Custom Tesseract error: {e}")
+            logger.error(f"Tesseract error for {lang}: {e}")
             return ""
 
 # Global instance
