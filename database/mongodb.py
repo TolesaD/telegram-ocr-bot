@@ -1,3 +1,4 @@
+# database/mongodb.py
 import logging
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
@@ -18,7 +19,8 @@ class Database:
             logger.info(f"✅ MONGODB_URI found: {self.mongodb_uri[:20]}...")
             self.client = MongoClient(
                 self.mongodb_uri,
-                ssl=True,
+                tls=True,
+                tlsAllowInvalidCertificates=True,
                 serverSelectionTimeoutMS=10000,
                 connectTimeoutMS=15000,
                 socketTimeoutMS=30000,
