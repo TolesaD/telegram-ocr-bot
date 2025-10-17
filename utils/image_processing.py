@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import time
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import io
 import os
 import pytesseract
@@ -19,6 +19,8 @@ try:
 except ImportError as e:
     OPENCV_AVAILABLE = False
     logger.warning(f"⚠️ OpenCV headless not available: {e}. Using PIL fallback.")
+
+logger = logging.getLogger(__name__)
 
 # Enhanced thread pool for better performance
 thread_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ocr_")
