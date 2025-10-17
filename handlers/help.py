@@ -53,9 +53,9 @@ async def handle_help_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "📸 *How to Use*\n\n"
             "1. Send an image containing text\n"
             "2. The bot automatically detects the language\n"
-            "3. Choose your preferred format (Plain, HTML(Copy Code))\n"
+            "3. Choose your preferred format (Plain, HTML)\n"
             "4. Get the extracted text!\n\n"
-            "💡 *Tips for Best Results*:\n"
+            "💡 *Tips for Best Results:*\n"
             "• Use clear, well-lit images\n"
             "• Ensure text is focused\n"
             "• High contrast works best\n"
@@ -95,7 +95,7 @@ async def handle_help_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "📝 *Available Formats*\n\n"
             "Choose how you want your text output:\n"
             "• 📄 *Plain*: Simple text without formatting\n"
-            "• 🌐 *HTML(Copy Code)*: Text with HTML tags for web use\n\n"
+            "• 🌐 *HTML*: Text with HTML tags for web use\n\n"
             "Change format in Settings!"
         )
         keyboard = [[InlineKeyboardButton("🔙 Back to Help", callback_data="help")]]

@@ -10,8 +10,8 @@ class TextFormatter:
         if not text:
             return ""
         # Remove excessive whitespace but preserve structure
-        lines = [line.strip() for line in text.split('\n')]
-        return '\n'.join(line for line in lines if line)
+        lines = [line for line in text.split('\n')]
+        return '\n'.join(lines)
     
     @staticmethod
     def format_html(text):

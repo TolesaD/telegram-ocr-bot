@@ -147,7 +147,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [
                 InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{message.message_id}"),
-                InlineKeyboardButton("🌐 HTML(Copy Code)", callback_data=f"reformat_html_{message.message_id}")
+                InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{message.message_id}")
             ],
             [
                 InlineKeyboardButton("🔄 Process Again", callback_data="convert_image")
@@ -272,7 +272,7 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [
                 InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{original_message_id}"),
-                InlineKeyboardButton("🌐 HTML(Copy Code)", callback_data=f"reformat_html_{original_message_id}")
+                InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{original_message_id}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
