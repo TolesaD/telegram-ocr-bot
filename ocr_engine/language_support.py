@@ -88,11 +88,12 @@ def get_language_name(code):
     """Get language name from code"""
     return LANGUAGE_MAPPING.get(code, 'Unknown')
 
+# In get_tesseract_code function, enhance Amharic support:
 def get_tesseract_code(lang_code):
     """Get Tesseract language code with enhanced Amharic support"""
     if lang_code == 'am':
-        # Try multiple Amharic configurations
-        return 'amh+amh_vert+eng'  # Fallback to English if Amharic fails
+        # Multiple Amharic configurations for better fallback
+        return 'amh+amh_vert+eng'  # Try Amharic, vertical Amharic, then English
     return TESSERACT_LANGUAGES.get(lang_code, 'eng')
 
 def get_language_family(lang_code):
