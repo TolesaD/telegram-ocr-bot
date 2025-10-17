@@ -8,8 +8,22 @@ import os
 import pytesseract
 from concurrent.futures import ThreadPoolExecutor
 from ocr_engine.language_support import get_tesseract_code, get_language_family, is_complex_script
-import cv2
-import numpy as np
+
+# Try to import OpenCV, but fall back to PIL if not available
+try:
+    import cv2
+    import numpy as np
+    OPENCV_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("✅ OpenCV loaded successfully")
+except ImportError as e:
+    OPENCV_AVAILABLE = False
+    logger.warning(f"⚠️ OpenCV not available: {e}. Using PIL fallback.")
+    # Create dummy numpy if OpenCV fails
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
 
 logger = logging.getLogger(__name__)
 
@@ -329,15 +343,16 @@ class OCRProcessor:
             logger.error(f"Custom Tesseract error: {e}")
             return ""
     
-    def enhanced_preprocess_image(self, image_bytes):
-        """Advanced image preprocessing for better OCR accuracy"""
-        try:
+def enhanced_preprocess_image(self, image_bytes):
+    """Advanced image preprocessing for better OCR accuracy"""
+    try:
+        if OPENCV_AVAILABLE and cv2 and np:
             # Use OpenCV for better preprocessing
             nparr = np.frombuffer(image_bytes, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
             if image is None:
-                raise ValueError("Could not decode image")
+                raise ValueError("Could not decode image with OpenCV")
             
             # Convert to grayscale
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -347,14 +362,15 @@ class OCRProcessor:
             
             # Convert back to PIL Image for Tesseract
             pil_image = Image.fromarray(processed)
-            
             return pil_image
-            
-        except Exception as e:
-            logger.error("Enhanced preprocessing error: %s", e)
-            # Fallback to basic PIL processing
+        else:
+            # Fallback to PIL processing
             return self.basic_pil_preprocessing(image_bytes)
-    
+            
+    except Exception as e:
+        logger.error("Enhanced preprocessing error: %s", e)
+        # Fallback to basic PIL processing
+        return self.basic_pil_preprocessing(image_bytes)
     def apply_advanced_preprocessing(self, gray_image):
         """Apply multiple preprocessing techniques"""
         # Technique 1: Denoising
