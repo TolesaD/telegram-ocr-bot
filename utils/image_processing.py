@@ -9,26 +9,16 @@ import pytesseract
 from concurrent.futures import ThreadPoolExecutor
 from ocr_engine.language_support import get_tesseract_code, get_language_family, is_complex_script
 
-# Try to import OpenCV, but fall back to PIL if not available
+# Try to import OpenCV headless
 try:
     import cv2
     import numpy as np
     OPENCV_AVAILABLE = True
     logger = logging.getLogger(__name__)
-    logger.info("✅ OpenCV loaded successfully")
+    logger.info("✅ OpenCV headless loaded successfully")
 except ImportError as e:
     OPENCV_AVAILABLE = False
-    logger.warning(f"⚠️ OpenCV not available: {e}. Using PIL fallback.")
-    # Create dummy numpy if OpenCV fails
-    try:
-        import numpy as np
-    except ImportError:
-        np = None
-
-logger = logging.getLogger(__name__)
-
-# Set TESSDATA_PREFIX
-os.environ['TESSDATA_PREFIX'] = os.getenv('TESSDATA_PREFIX', 'C:\\Program Files\\Tesseract-OCR\\tessdata')
+    logger.warning(f"⚠️ OpenCV headless not available: {e}. Using PIL fallback.")
 
 # Enhanced thread pool for better performance
 thread_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ocr_")
@@ -321,7 +311,7 @@ class OCRProcessor:
             cleaned_text = self.enhanced_clean_text(text)
             
             if not cleaned_text.strip():
-                return "🔍 No readable text found. Please try:\n• Clearer, well-lit images\n• Better focus and contrast\n• Straight, non-blurry photos\n• Crop to text area"
+                return "🔍 No readable text found. Please try a clearer image with better lighting."
             
             return cleaned_text
             
@@ -343,34 +333,35 @@ class OCRProcessor:
             logger.error(f"Custom Tesseract error: {e}")
             return ""
     
-def enhanced_preprocess_image(self, image_bytes):
-    """Advanced image preprocessing for better OCR accuracy"""
-    try:
-        if OPENCV_AVAILABLE and cv2 and np:
-            # Use OpenCV for better preprocessing
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if image is None:
-                raise ValueError("Could not decode image with OpenCV")
-            
-            # Convert to grayscale
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # Multiple preprocessing techniques
-            processed = self.apply_advanced_preprocessing(gray)
-            
-            # Convert back to PIL Image for Tesseract
-            pil_image = Image.fromarray(processed)
-            return pil_image
-        else:
-            # Fallback to PIL processing
+    def enhanced_preprocess_image(self, image_bytes):
+        """Advanced image preprocessing for better OCR accuracy"""
+        try:
+            if OPENCV_AVAILABLE:
+                # Use OpenCV for better preprocessing
+                nparr = np.frombuffer(image_bytes, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if image is None:
+                    raise ValueError("Could not decode image with OpenCV")
+                
+                # Convert to grayscale
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                
+                # Multiple preprocessing techniques
+                processed = self.apply_advanced_preprocessing(gray)
+                
+                # Convert back to PIL Image for Tesseract
+                pil_image = Image.fromarray(processed)
+                return pil_image
+            else:
+                # Fallback to PIL processing
+                return self.basic_pil_preprocessing(image_bytes)
+                
+        except Exception as e:
+            logger.error("Enhanced preprocessing error: %s", e)
+            # Fallback to basic PIL processing
             return self.basic_pil_preprocessing(image_bytes)
-            
-    except Exception as e:
-        logger.error("Enhanced preprocessing error: %s", e)
-        # Fallback to basic PIL processing
-        return self.basic_pil_preprocessing(image_bytes)
+    
     def apply_advanced_preprocessing(self, gray_image):
         """Apply multiple preprocessing techniques"""
         # Technique 1: Denoising
@@ -397,27 +388,30 @@ def enhanced_preprocess_image(self, image_bytes):
     def enhanced_deblur_processing(self, image_bytes):
         """Special processing for blurry images"""
         try:
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # Stronger denoising for blurry images
-            denoised = cv2.fastNlMeansDenoising(gray, None, h=40, templateWindowSize=9, searchWindowSize=21)
-            
-            # Stronger sharpening
-            kernel = np.array([[-2,-2,-2], [-2,17,-2], [-2,-2,-2]]) / 9.0
-            sharpened = cv2.filter2D(denoised, -1, kernel)
-            
-            # Bilateral filter for edge preservation
-            bilateral = cv2.bilateralFilter(sharpened, 9, 75, 75)
-            
-            # High contrast adaptive threshold
-            thresh = cv2.adaptiveThreshold(bilateral, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                         cv2.THRESH_BINARY, 15, 5)
-            
-            pil_image = Image.fromarray(thresh)
-            return pil_image
-            
+            if OPENCV_AVAILABLE:
+                nparr = np.frombuffer(image_bytes, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                
+                # Stronger denoising for blurry images
+                denoised = cv2.fastNlMeansDenoising(gray, None, h=40, templateWindowSize=9, searchWindowSize=21)
+                
+                # Stronger sharpening
+                kernel = np.array([[-2,-2,-2], [-2,17,-2], [-2,-2,-2]]) / 9.0
+                sharpened = cv2.filter2D(denoised, -1, kernel)
+                
+                # Bilateral filter for edge preservation
+                bilateral = cv2.bilateralFilter(sharpened, 9, 75, 75)
+                
+                # High contrast adaptive threshold
+                thresh = cv2.adaptiveThreshold(bilateral, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                             cv2.THRESH_BINARY, 15, 5)
+                
+                pil_image = Image.fromarray(thresh)
+                return pil_image
+            else:
+                return self.basic_pil_preprocessing(image_bytes)
+                
         except Exception as e:
             logger.error("Deblur processing failed: %s", e)
             return self.basic_pil_preprocessing(image_bytes)
@@ -425,28 +419,31 @@ def enhanced_preprocess_image(self, image_bytes):
     def preprocess_for_amharic(self, image_bytes):
         """Special preprocessing for Amharic script"""
         try:
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # Amharic benefits from different processing
-            # Less aggressive denoising to preserve character details
-            denoised = cv2.fastNlMeansDenoising(gray, None, h=15, templateWindowSize=5, searchWindowSize=15)
-            
-            # Moderate contrast enhancement
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            contrast_enhanced = clahe.apply(denoised)
-            
-            # Gentle sharpening
-            kernel = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
-            sharpened = cv2.filter2D(contrast_enhanced, -1, kernel)
-            
-            # Otsu's thresholding for Amharic
-            _, thresh = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            
-            pil_image = Image.fromarray(thresh)
-            return pil_image
-            
+            if OPENCV_AVAILABLE:
+                nparr = np.frombuffer(image_bytes, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                
+                # Amharic benefits from different processing
+                # Less aggressive denoising to preserve character details
+                denoised = cv2.fastNlMeansDenoising(gray, None, h=15, templateWindowSize=5, searchWindowSize=15)
+                
+                # Moderate contrast enhancement
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                contrast_enhanced = clahe.apply(denoised)
+                
+                # Gentle sharpening
+                kernel = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
+                sharpened = cv2.filter2D(contrast_enhanced, -1, kernel)
+                
+                # Otsu's thresholding for Amharic
+                _, thresh = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                
+                pil_image = Image.fromarray(thresh)
+                return pil_image
+            else:
+                return self.basic_pil_preprocessing(image_bytes)
+                
         except Exception as e:
             logger.error("Amharic preprocessing failed: %s", e)
             return self.basic_pil_preprocessing(image_bytes)
@@ -489,7 +486,7 @@ def enhanced_preprocess_image(self, image_bytes):
         result = '\n'.join(filtered_lines).rstrip()
         
         if len(result.strip()) < 5:
-            return "📝 Very little text detected. Please try:\n• Higher quality image\n• Better lighting conditions\n• Clearer text focus\n• Less complex background"
+            return "📝 Very little text detected. Please try a higher quality image."
         
         return result
     
