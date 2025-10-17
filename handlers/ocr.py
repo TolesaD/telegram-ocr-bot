@@ -43,11 +43,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_settings = user.get('settings', {}) if user else {}
     except Exception as e:
         logger.error(f"Error getting user settings: {e}")
-# In your user initialization code, ensure:
-user_settings = {
-    'text_format': 'plain',  # Default to plain text
-    # ... other settings
-}
+        user_settings = {}
+    
+    text_format = user_settings.get('text_format', 'plain')
     
     # No language selection - auto detection handled in OCR
     
@@ -137,33 +135,36 @@ user_settings = {
                 })
         except Exception as e:
             logger.error(f"Error logging OCR request: {e}")
-
-# Enhanced response with clear format information
-if text_format == 'html':
-    response_text = (
-        f"📝 **Extracted Text** (HTML - Copy Friendly)\n"
-        f"⏱️ Processed in: {processing_time:.2f}s\n\n"
-        f"{formatted_text}"
-    )
-    parse_mode = 'HTML'
-else:
-    response_text = (
-        f"📝 **Extracted Text** (Plain Format)\n"
-        f"⏱️ Processed in: {processing_time:.2f}s\n\n"
-        f"{formatted_text}"
-    )
-    parse_mode = None
-
-# Enhanced format options with clear labels
-keyboard = [
-    [
-        InlineKeyboardButton("📄 Plain Text", callback_data=f"reformat_plain_{message.message_id}"),
-        InlineKeyboardButton("📋 Copy HTML", callback_data=f"reformat_html_{message.message_id}")
-    ],
-    [
-        InlineKeyboardButton("🔄 Process Again", callback_data="convert_image")
-    ]
-]
+        
+        # Enhanced response with performance info
+        if text_format == 'html':
+            response_text = (
+                f"📝 **Extracted Text** (HTML Format - Copy Friendly)\n"
+                f"⏱️ Processed in: {processing_time:.2f}s\n\n"
+                f"{formatted_text}"
+            )
+            parse_mode = 'HTML'
+        else:
+            response_text = (
+                f"📝 **Extracted Text** (Plain Format)\n"
+                f"⏱️ Processed in: {processing_time:.2f}s\n\n"
+                f"{formatted_text}"
+            )
+            parse_mode = None
+        
+        # Handle long messages
+        messages = TextFormatter.split_long_message(response_text)
+        
+        # Enhanced format options
+        keyboard = [
+            [
+                InlineKeyboardButton("📄 Plain Text", callback_data=f"reformat_plain_{message.message_id}"),
+                InlineKeyboardButton("📋 Copy HTML", callback_data=f"reformat_html_{message.message_id}")
+            ],
+            [
+                InlineKeyboardButton("🔄 Process Again", callback_data="convert_image")
+            ]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         if len(messages) > 1:
@@ -288,18 +289,17 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Enhanced response
         if format_type == 'html':
-            response_text = f"📝 **Reformatted Text** ({format_type.upper()})\n\n{formatted_text}"
+            response_text = f"📝 **Reformatted Text** ({format_type.upper()} - Copy Friendly)\n\n{formatted_text}"
             parse_mode = 'HTML'
         else:
-            response_text = f"📝 **Reformatted Text** ({format_type.upper()})\n\n```\n{formatted_text}\n```"
-            parse_mode = 'Markdown'
+            response_text = f"📝 **Reformatted Text** ({format_type.upper()})\n\n{formatted_text}"
+            parse_mode = None
         
-        # Smart parse mode selection
         # Enhanced keyboard
         keyboard = [
             [
-                InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{original_message_id}"),
-                InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{original_message_id}")
+                InlineKeyboardButton("📄 Plain Text", callback_data=f"reformat_plain_{original_message_id}"),
+                InlineKeyboardButton("📋 Copy HTML", callback_data=f"reformat_html_{original_message_id}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)

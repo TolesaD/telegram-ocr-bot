@@ -1,5 +1,5 @@
 # ocr_engine/language_support.py
-# Enhanced language support with better Amharic handling
+# Enhanced language support with 100+ languages (assuming all Tesseract packs installed)
 LANGUAGE_MAPPING = {
     'af': 'Afrikaans', 'ar': 'Arabic', 'az': 'Azerbaijani', 'be': 'Belarusian',
     'bg': 'Bulgarian', 'bn': 'Bengali', 'bs': 'Bosnian', 'ca': 'Catalan',
@@ -24,7 +24,7 @@ LANGUAGE_MAPPING = {
     'tr': 'Turkish', 'uk': 'Ukrainian', 'ur': 'Urdu', 'uz': 'Uzbek',
     'vi': 'Vietnamese', 'xh': 'Xhosa', 'yi': 'Yiddish', 'yo': 'Yoruba',
     'zh': 'Chinese', 'zu': 'Zulu',
-    # Enhanced African languages support
+    # Added more for African and Indian
     'am': 'Amharic', 'bm': 'Bambara', 'ff': 'Fula', 'lg': 'Luganda',
     'ln': 'Lingala', 'lu': 'Luba-Katanga', 'nd': 'North Ndebele',
     'om': 'Oromo', 'rn': 'Kirundi', 'rw': 'Kinyarwanda', 'sg': 'Sango',
@@ -33,7 +33,7 @@ LANGUAGE_MAPPING = {
     'as': 'Assamese', 'bh': 'Bihari', 'or': 'Oriya', 'sd': 'Sindhi'
 }
 
-# Enhanced Tesseract language codes with better Amharic support
+# Tesseract language codes (expanded for all)
 TESSERACT_LANGUAGES = {
     'af': 'afr', 'ar': 'ara', 'az': 'aze', 'be': 'bel', 'bg': 'bul',
     'bn': 'ben', 'bs': 'bos', 'ca': 'cat', 'ceb': 'ceb', 'cs': 'ces',
@@ -53,7 +53,7 @@ TESSERACT_LANGUAGES = {
     'th': 'tha', 'tl': 'tgl', 'tr': 'tur', 'uk': 'ukr', 'ur': 'urd',
     'uz': 'uzb', 'vi': 'vie', 'xh': 'xho', 'yi': 'yid', 'yo': 'yor',
     'zh': 'chi_sim', 'zu': 'zul',
-    # Enhanced support for African languages
+    # Added more
     'am': 'amh+amh_vert', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
     'ln': 'lin', 'lu': 'lua', 'nd': 'nde', 'om': 'orm', 'rn': 'run',
     'rw': 'kin', 'sg': 'sag', 'sn': 'sna', 'ss': 'ssw', 'ti': 'tir',
@@ -80,6 +80,13 @@ LANGUAGE_FAMILIES = {
     'en': 'Latin'
 }
 
+# Amharic-specific configuration
+AMHARIC_CONFIG = {
+    'psm': '6',  # Uniform block of text
+    'oem': '1',  # Neural nets LSTM engine only
+    'config': '-c tessedit_char_whitelist=፩፪፫፬፭፮፯፰፱፲፳፴፵፶፷፸፹፺፻፼።፣፤፥፦፧፨፠፡።፣፤፥፦፧፨ᎀᎁᎂᎃᎄᎅᎆᎇᎈᎉᎊᎋᎌᎍᎎᎏ᎐᎑᎒᎓᎔᎕᎖᎗᎘᎙᎚᎛᎜᎝᎞᎟ᎠᎡᎢᎣᎤᎥᎦᎧᎨᎩᎪᎫᎬᎭᎮᎯᎰᎱᎲᎳᎴᎵᎶᎷᎸᎹᎺᎻᎼᎽᎾᎿᏀᏁᏂᏃᏄᏅᏆᏇᏈᏉᏊᏋᏌᏍᏎᏏᏐᏑᏒᏓᏔᏕᏖᏗᏘᏙᏚᏛᏜᏝᏞᏟᏠᏡᏢᏣᏤᏥᏦᏧᏨᏩᏪᏫᏬᏭᏮᏯᏰᏱᏲᏳᏴᏵabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:-()[]{}'
+}
+
 def get_supported_languages():
     """Return list of supported languages"""
     return list(LANGUAGE_MAPPING.keys())
@@ -88,12 +95,11 @@ def get_language_name(code):
     """Get language name from code"""
     return LANGUAGE_MAPPING.get(code, 'Unknown')
 
-# In get_tesseract_code function, enhance Amharic support:
 def get_tesseract_code(lang_code):
     """Get Tesseract language code with enhanced Amharic support"""
     if lang_code == 'am':
-        # Multiple Amharic configurations for better fallback
-        return 'amh+amh_vert+eng'  # Try Amharic, vertical Amharic, then English
+        # Try multiple Amharic configurations
+        return 'amh+amh_vert+eng'  # Fallback to English if Amharic fails
     return TESSERACT_LANGUAGES.get(lang_code, 'eng')
 
 def get_language_family(lang_code):
@@ -104,3 +110,13 @@ def is_complex_script(lang_code):
     """Check if language uses complex script requiring special processing"""
     complex_scripts = ['am', 'ar', 'he', 'th', 'zh', 'ja', 'ko', 'hi']
     return lang_code in complex_scripts
+
+def get_amharic_config():
+    """Get Amharic-specific Tesseract configuration"""
+    return f'--oem {AMHARIC_CONFIG["oem"]} --psm {AMHARIC_CONFIG["psm"]} {AMHARIC_CONFIG["config"]}'
+
+def is_amharic_character(char):
+    """Check if character is in Amharic Unicode range"""
+    return ('\u1200' <= char <= '\u137F' or 
+            '\u2D80' <= char <= '\u2DDF' or 
+            '\uAB00' <= char <= '\uAB2F')
