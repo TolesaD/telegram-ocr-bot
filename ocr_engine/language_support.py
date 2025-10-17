@@ -1,5 +1,5 @@
 # ocr_engine/language_support.py
-# Enhanced language support with 100+ languages (assuming all Tesseract packs installed)
+# Enhanced language support with better Amharic handling
 LANGUAGE_MAPPING = {
     'af': 'Afrikaans', 'ar': 'Arabic', 'az': 'Azerbaijani', 'be': 'Belarusian',
     'bg': 'Bulgarian', 'bn': 'Bengali', 'bs': 'Bosnian', 'ca': 'Catalan',
@@ -24,7 +24,7 @@ LANGUAGE_MAPPING = {
     'tr': 'Turkish', 'uk': 'Ukrainian', 'ur': 'Urdu', 'uz': 'Uzbek',
     'vi': 'Vietnamese', 'xh': 'Xhosa', 'yi': 'Yiddish', 'yo': 'Yoruba',
     'zh': 'Chinese', 'zu': 'Zulu',
-    # Added more for African and Indian
+    # Enhanced African languages support
     'am': 'Amharic', 'bm': 'Bambara', 'ff': 'Fula', 'lg': 'Luganda',
     'ln': 'Lingala', 'lu': 'Luba-Katanga', 'nd': 'North Ndebele',
     'om': 'Oromo', 'rn': 'Kirundi', 'rw': 'Kinyarwanda', 'sg': 'Sango',
@@ -33,7 +33,7 @@ LANGUAGE_MAPPING = {
     'as': 'Assamese', 'bh': 'Bihari', 'or': 'Oriya', 'sd': 'Sindhi'
 }
 
-# Tesseract language codes (expanded for all)
+# Enhanced Tesseract language codes with better Amharic support
 TESSERACT_LANGUAGES = {
     'af': 'afr', 'ar': 'ara', 'az': 'aze', 'be': 'bel', 'bg': 'bul',
     'bn': 'ben', 'bs': 'bos', 'ca': 'cat', 'ceb': 'ceb', 'cs': 'ces',
@@ -53,12 +53,31 @@ TESSERACT_LANGUAGES = {
     'th': 'tha', 'tl': 'tgl', 'tr': 'tur', 'uk': 'ukr', 'ur': 'urd',
     'uz': 'uzb', 'vi': 'vie', 'xh': 'xho', 'yi': 'yid', 'yo': 'yor',
     'zh': 'chi_sim', 'zu': 'zul',
-    # Added more
-    'am': 'amh', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
+    # Enhanced support for African languages
+    'am': 'amh+amh_vert', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
     'ln': 'lin', 'lu': 'lua', 'nd': 'nde', 'om': 'orm', 'rn': 'run',
     'rw': 'kin', 'sg': 'sag', 'sn': 'sna', 'ss': 'ssw', 'ti': 'tir',
     'tn': 'tsn', 'ts': 'tso', 've': 'ven', 'wo': 'wol', 'or': 'ori',
     'sd': 'snd'
+}
+
+# Language families for better script detection
+LANGUAGE_FAMILIES = {
+    'am': 'Ethiopic',
+    'ar': 'Arabic',
+    'he': 'Hebrew',
+    'ru': 'Cyrillic',
+    'el': 'Greek',
+    'th': 'Thai',
+    'zh': 'Chinese',
+    'ja': 'Japanese',
+    'ko': 'Korean',
+    'hi': 'Devanagari',
+    'ta': 'Tamil',
+    'te': 'Telugu',
+    'kn': 'Kannada',
+    'ml': 'Malayalam',
+    'en': 'Latin'
 }
 
 def get_supported_languages():
@@ -70,5 +89,17 @@ def get_language_name(code):
     return LANGUAGE_MAPPING.get(code, 'Unknown')
 
 def get_tesseract_code(lang_code):
-    """Get Tesseract language code"""
+    """Get Tesseract language code with enhanced Amharic support"""
+    if lang_code == 'am':
+        # Try multiple Amharic configurations
+        return 'amh+amh_vert+eng'  # Fallback to English if Amharic fails
     return TESSERACT_LANGUAGES.get(lang_code, 'eng')
+
+def get_language_family(lang_code):
+    """Get language family for script-specific processing"""
+    return LANGUAGE_FAMILIES.get(lang_code, 'Latin')
+
+def is_complex_script(lang_code):
+    """Check if language uses complex script requiring special processing"""
+    complex_scripts = ['am', 'ar', 'he', 'th', 'zh', 'ja', 'ko', 'hi']
+    return lang_code in complex_scripts

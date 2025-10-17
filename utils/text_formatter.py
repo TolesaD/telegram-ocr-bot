@@ -6,45 +6,56 @@ class TextFormatter:
     
     @staticmethod
     def format_plain(text):
-        """Format text as plain text with enhanced cleaning"""
+        """Format text as plain text with structure preservation"""
         if not text:
             return ""
-        # Remove excessive whitespace but preserve structure
-        lines = [line for line in text.split('\n')]
-        return '\n'.join(lines)
+        
+        # Preserve original line breaks and spacing
+        lines = text.split('\n')
+        
+        # Clean each line but maintain original structure
+        cleaned_lines = []
+        for line in lines:
+            # Remove excessive internal whitespace but preserve line structure
+            cleaned_line = ' '.join(line.split())
+            cleaned_lines.append(cleaned_line)
+        
+        # Join back with original line breaks
+        return '\n'.join(cleaned_lines)
     
     @staticmethod
     def format_html(text):
-        """Enhanced HTML formatting with Telegram-compatible tags only"""
+        """Enhanced HTML formatting with copy-friendly output"""
         if not text:
             return ""
         
         try:
-            # Escape HTML entities first
+            # Escape HTML entities
             escaped_text = html.escape(text)
             
-            # Enhanced line processing - use Telegram supported tags only
+            # Process lines for better structure
             lines = escaped_text.split('\n')
             html_lines = []
             
-            for line in lines:
+            for i, line in enumerate(lines):
                 line = line.strip()
                 if line:
-                    # Use <b>, <i>, <u>, <code>, <pre> tags only (Telegram supported)
-                    # For paragraphs, we'll use bold for emphasis
-                    if len(line) > 50:  # Long lines as paragraphs
-                        html_lines.append(f"<b>{line}</b>")
-                    else:
-                        html_lines.append(f"<i>{line}</i>")
+                    # For better copy-paste, use simple formatting
+                    # Use monospace font and preserve spaces
+                    html_lines.append(f"<code>{line}</code>")
                 else:
+                    # Preserve paragraph breaks
                     html_lines.append("<br>")
             
+            # Use <pre> tag for better formatting but make it copy-friendly
             formatted_text = '\n'.join(html_lines)
             
-            # Use <pre> tag for code-like formatting (Telegram supports this)
-            return f"<pre>{formatted_text}</pre>"
-        except:
-            # Fallback to plain text in <pre> tags
+            # Return with minimal styling for easy copying
+            return formatted_text
+            
+        except Exception as e:
+            print(f"HTML formatting error: {e}")
+            # Fallback to simple preformatted text
             return f"<pre>{html.escape(text)}</pre>"
     
     @staticmethod
@@ -57,10 +68,37 @@ class TextFormatter:
         
         try:
             if format_type == 'html':
-                return TextFormatter.format_html(text)
+                formatted = TextFormatter.format_html(text)
+                # Ensure the HTML is copy-friendly
+                return formatted
             else:  # plain or any other type
                 return TextFormatter.format_plain(text)
         except Exception as e:
-            # Enhanced error handling
             print(f"Formatting error: {e}")
             return text
+    
+    @staticmethod
+    def split_long_message(text, max_length=4000):
+        """Split long messages for Telegram"""
+        if len(text) <= max_length:
+            return [text]
+        
+        parts = []
+        while text:
+            if len(text) <= max_length:
+                parts.append(text)
+                break
+            
+            # Find the last newline within the limit
+            split_pos = text.rfind('\n', 0, max_length)
+            if split_pos == -1:
+                # No newline found, split at space
+                split_pos = text.rfind(' ', 0, max_length)
+            if split_pos == -1:
+                # No space found, force split
+                split_pos = max_length
+            
+            parts.append(text[:split_pos])
+            text = text[split_pos:].lstrip()
+        
+        return parts

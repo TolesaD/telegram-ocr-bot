@@ -2,12 +2,14 @@
 import asyncio
 import logging
 import time
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter
 import io
 import os
 import pytesseract
 from concurrent.futures import ThreadPoolExecutor
-from ocr_engine.language_support import get_tesseract_code
+from ocr_engine.language_support import get_tesseract_code, get_language_family, is_complex_script
+import cv2
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -58,39 +60,155 @@ class OCRProcessor:
             return ['eng']
     
     async def extract_text_optimized(self, image_bytes, language=None):
-        """Enhanced text extraction with performance optimizations"""
+        """Enhanced text extraction with multiple strategies for blurry images and Amharic"""
         start_time = time.time()
         
         try:
+            # Strategy 1: Try with enhanced preprocessing for blurry images
             processed_image = await asyncio.get_event_loop().run_in_executor(
                 thread_pool,
                 self.enhanced_preprocess_image,
                 image_bytes
             )
             
+            # Strategy 2: Auto-detect script and language
             script = await self.detect_script(processed_image)
             logger.info(f"Detected script: {script}")
             
+            # Strategy 3: Try multiple language combinations for Amharic
             lang_code = self.get_lang_from_script(script)
             
-            available_langs = self.get_tesseract_languages()
-            if lang_code not in available_langs:
-                logger.warning(f"Language {lang_code} not available, using English")
-                lang_code = 'eng'
+            # Enhanced Amharic detection and processing
+            if script == 'Ethiopic' or 'amh' in str(script).lower():
+                lang_code = 'am'
+                logger.info("🔍 Detected Amharic/Ethiopic script, using enhanced Amharic processing")
             
-            text = await self.extract_with_tesseract_enhanced(processed_image, lang_code)
-            text = self.fix_bullet_artifacts(text)
+            available_langs = self.get_tesseract_languages()
+            
+            # Strategy 4: Try multiple OCR attempts with different configurations
+            text = await self.multi_strategy_ocr(processed_image, lang_code, available_langs, image_bytes)
             
             processing_time = time.time() - start_time
-            logger.info("⚡ Tesseract processed in %.2fs", processing_time)
+            logger.info("⚡ Enhanced OCR processed in %.2fs", processing_time)
+            
             return text
             
         except Exception as e:
             logger.error(f"OCR processing failed: {e}")
             return f"❌ OCR failed: {str(e)}. Please ensure the language pack is installed and try a clearer image."
     
+    async def multi_strategy_ocr(self, processed_image, lang_code, available_langs, original_image_bytes):
+        """Try multiple OCR strategies for better accuracy"""
+        strategies = [
+            self.strategy_standard_ocr,
+            self.strategy_enhanced_amharic,
+            self.strategy_blurry_image,
+            self.strategy_fallback_english
+        ]
+        
+        best_result = ""
+        best_confidence = 0
+        
+        for strategy in strategies:
+            try:
+                result, confidence = await strategy(processed_image, lang_code, available_langs, original_image_bytes)
+                if confidence > best_confidence and len(result.strip()) > 10:
+                    best_result = result
+                    best_confidence = confidence
+                    logger.info(f"✅ Strategy {strategy.__name__} achieved confidence: {confidence}")
+                    
+                    # If we get good confidence, return early
+                    if confidence > 70:
+                        break
+            except Exception as e:
+                logger.warning(f"Strategy {strategy.__name__} failed: {e}")
+                continue
+        
+        if best_result and len(best_result.strip()) > 5:
+            return self.fix_bullet_artifacts(best_result)
+        else:
+            return "🔍 No readable text found. Please try a clearer, well-lit image with focused text."
+    
+    async def strategy_standard_ocr(self, image, lang_code, available_langs, original_image_bytes):
+        """Standard OCR strategy"""
+        tesseract_lang = get_tesseract_code(lang_code)
+        if tesseract_lang not in available_langs:
+            tesseract_lang = 'eng'
+        
+        text = await self.extract_with_tesseract_enhanced(image, tesseract_lang, 'standard')
+        confidence = self.estimate_confidence(text)
+        return text, confidence
+    
+    async def strategy_enhanced_amharic(self, image, lang_code, available_langs, original_image_bytes):
+        """Enhanced Amharic OCR strategy"""
+        if lang_code != 'am' and 'amh' not in str(get_tesseract_code(lang_code)):
+            return "", 0
+        
+        # Special preprocessing for Amharic
+        amharic_image = await asyncio.get_event_loop().run_in_executor(
+            thread_pool,
+            self.preprocess_for_amharic,
+            original_image_bytes
+        )
+        
+        # Try multiple Amharic configurations
+        amh_configs = [
+            '--oem 1 --psm 6',  # Uniform text block
+            '--oem 1 --psm 4',  # Single column
+            '--oem 1 --psm 3',  # Fully automatic
+        ]
+        
+        best_text = ""
+        for config in amh_configs:
+            try:
+                text = await self.extract_with_tesseract_custom(amharic_image, 'amh+amh_vert', config)
+                if len(text.strip()) > len(best_text.strip()):
+                    best_text = text
+            except:
+                continue
+        
+        confidence = self.estimate_confidence(best_text)
+        return best_text, confidence
+    
+    async def strategy_blurry_image(self, image, lang_code, available_langs, original_image_bytes):
+        """Special strategy for blurry images"""
+        blurry_image = await asyncio.get_event_loop().run_in_executor(
+            thread_pool,
+            self.enhanced_deblur_processing,
+            original_image_bytes
+        )
+        
+        tesseract_lang = get_tesseract_code(lang_code)
+        if tesseract_lang not in available_langs:
+            tesseract_lang = 'eng'
+        
+        text = await self.extract_with_tesseract_enhanced(blurry_image, tesseract_lang, 'blurry')
+        confidence = self.estimate_confidence(text)
+        return text, confidence
+    
+    async def strategy_fallback_english(self, image, lang_code, available_langs, original_image_bytes):
+        """Fallback to English if other strategies fail"""
+        text = await self.extract_with_tesseract_enhanced(image, 'eng', 'fallback')
+        confidence = self.estimate_confidence(text)
+        return text, confidence
+    
+    def estimate_confidence(self, text):
+        """Estimate confidence based on text quality"""
+        if not text or len(text.strip()) < 5:
+            return 0
+        
+        # Count readable characters vs garbage
+        readable_chars = sum(1 for c in text if c.isalnum() or c.isspace() or c in ',.!?;:-()[]{}')
+        total_chars = len(text)
+        
+        if total_chars == 0:
+            return 0
+        
+        confidence = (readable_chars / total_chars) * 100
+        return min(confidence, 100)
+    
     async def detect_script(self, image):
-        """Detect script using Tesseract OSD"""
+        """Enhanced script detection using Tesseract OSD"""
         loop = asyncio.get_event_loop()
         try:
             osd = await loop.run_in_executor(
@@ -107,7 +225,7 @@ class OCRProcessor:
             return 'Latin'
     
     def get_lang_from_script(self, script):
-        """Map script to language code, fallback if not available"""
+        """Map script to language code with enhanced detection"""
         mapping = {
             'Latin': 'eng',
             'Cyrillic': 'rus',
@@ -124,6 +242,7 @@ class OCRProcessor:
             'Gurmukhi': 'pan',
             'Bengali': 'ben',
             'Amharic': 'amh',
+            'Ethiopic': 'amh',
             'Hebrew': 'heb',
             'Armenian': 'hye',
             'Georgian': 'kat',
@@ -133,33 +252,52 @@ class OCRProcessor:
             'Myanmar': 'mya',
             'Sinhala': 'sin',
             'Greek': 'ell',
-            'Ethiopic': 'amh',
             'Oriya': 'ori',
             'Sindhi': 'snd',
-            'Tibetan': 'bod',
-            'Swahili': 'swa',
-            'Yoruba': 'yor'
+            'Tibetan': 'bod'
         }
         lang_code = mapping.get(script, 'eng')
-        available_langs = self.get_tesseract_languages()
-        return lang_code if lang_code in available_langs else 'eng'
+        return lang_code
     
-    async def extract_with_tesseract_enhanced(self, image, lang_code):
-        """Enhanced Tesseract extraction preserving structure"""
+    async def extract_with_tesseract_enhanced(self, image, lang_code, strategy='standard'):
+        """Enhanced Tesseract extraction with strategy-based configurations"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             thread_pool,
             self._tesseract_extract_enhanced,
             image,
-            lang_code
+            lang_code,
+            strategy
         )
     
-    def _tesseract_extract_enhanced(self, image, lang_code):
-        """Extract text with Tesseract, preserving structure"""
+    async def extract_with_tesseract_custom(self, image, lang_code, custom_config):
+        """Custom Tesseract extraction with specific configuration"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            thread_pool,
+            self._tesseract_extract_custom,
+            image,
+            lang_code,
+            custom_config
+        )
+    
+    def _tesseract_extract_enhanced(self, image, lang_code, strategy):
+        """Extract text with strategy-based Tesseract configuration"""
         try:
-            config = '--oem 3 --psm 3 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'
-            if lang_code == 'amh':
-                config = '--oem 0 --psm 6 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'  # Legacy for Amharic
+            # Strategy-based configurations
+            configs = {
+                'standard': '--oem 3 --psm 3 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1',
+                'blurry': '--oem 3 --psm 6 -c preserve_interword_spaces=1 -c textord_min_linesize=3.0',
+                'amharic': '--oem 1 --psm 6 -c preserve_interword_spaces=1 -c textord_old_baselines=1',
+                'fallback': '--oem 3 --psm 4 -c preserve_interword_spaces=1'
+            }
+            
+            config = configs.get(strategy, configs['standard'])
+            
+            # Special handling for Amharic
+            if 'amh' in lang_code and strategy != 'amharic':
+                config = configs['amharic']
+            
             text = pytesseract.image_to_string(
                 image,
                 lang=lang_code,
@@ -177,39 +315,139 @@ class OCRProcessor:
             logger.error(f"Tesseract error: {e}")
             return f"❌ OCR failed: {str(e)}. Please try again with a clearer image."
     
+    def _tesseract_extract_custom(self, image, lang_code, custom_config):
+        """Custom Tesseract extraction with specific config"""
+        try:
+            text = pytesseract.image_to_string(
+                image,
+                lang=lang_code,
+                config=custom_config,
+                timeout=30
+            )
+            return self.enhanced_clean_text(text)
+        except Exception as e:
+            logger.error(f"Custom Tesseract error: {e}")
+            return ""
+    
     def enhanced_preprocess_image(self, image_bytes):
         """Advanced image preprocessing for better OCR accuracy"""
         try:
-            image = Image.open(io.BytesIO(image_bytes))
-            original_width, original_height = image.size
+            # Use OpenCV for better preprocessing
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
-            max_dim = 2000  # Increased for better detail
-            if max(image.size) > max_dim:
-                scale = max_dim / max(image.size)
-                new_width = int(image.width * scale)
-                new_height = int(image.height * scale)
-                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                logger.debug("🖼️ Resized image from %dx%d to %dx%d", 
-                           original_width, original_height, new_width, new_height)
+            if image is None:
+                raise ValueError("Could not decode image")
             
-            if image.mode != 'L':
-                image = image.convert('L')
+            # Convert to grayscale
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(4.0)  # Increased for better bullet recognition
-            enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(3.5)
-            enhancer = ImageEnhance.Brightness(image)
-            image = enhancer.enhance(1.3)
-            image = image.filter(ImageFilter.MedianFilter(size=3))
-            image = image.filter(ImageFilter.EDGE_ENHANCE)
-            image = image.filter(ImageFilter.GaussianBlur(radius=0.5))  # Add slight blur for denoising blurry images
-            image = ImageOps.autocontrast(image, cutoff=5)
+            # Multiple preprocessing techniques
+            processed = self.apply_advanced_preprocessing(gray)
             
-            return image
+            # Convert back to PIL Image for Tesseract
+            pil_image = Image.fromarray(processed)
+            
+            return pil_image
             
         except Exception as e:
             logger.error("Enhanced preprocessing error: %s", e)
+            # Fallback to basic PIL processing
+            return self.basic_pil_preprocessing(image_bytes)
+    
+    def apply_advanced_preprocessing(self, gray_image):
+        """Apply multiple preprocessing techniques"""
+        # Technique 1: Denoising
+        denoised = cv2.fastNlMeansDenoising(gray_image, None, h=20, templateWindowSize=7, searchWindowSize=21)
+        
+        # Technique 2: Contrast enhancement using CLAHE
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+        contrast_enhanced = clahe.apply(denoised)
+        
+        # Technique 3: Sharpening
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        sharpened = cv2.filter2D(contrast_enhanced, -1, kernel)
+        
+        # Technique 4: Adaptive thresholding
+        thresh = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                     cv2.THRESH_BINARY, 11, 2)
+        
+        # Technique 5: Morphological operations to clean up
+        kernel = np.ones((2,2), np.uint8)
+        cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        
+        return cleaned
+    
+    def enhanced_deblur_processing(self, image_bytes):
+        """Special processing for blurry images"""
+        try:
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            
+            # Stronger denoising for blurry images
+            denoised = cv2.fastNlMeansDenoising(gray, None, h=40, templateWindowSize=9, searchWindowSize=21)
+            
+            # Stronger sharpening
+            kernel = np.array([[-2,-2,-2], [-2,17,-2], [-2,-2,-2]]) / 9.0
+            sharpened = cv2.filter2D(denoised, -1, kernel)
+            
+            # Bilateral filter for edge preservation
+            bilateral = cv2.bilateralFilter(sharpened, 9, 75, 75)
+            
+            # High contrast adaptive threshold
+            thresh = cv2.adaptiveThreshold(bilateral, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                         cv2.THRESH_BINARY, 15, 5)
+            
+            pil_image = Image.fromarray(thresh)
+            return pil_image
+            
+        except Exception as e:
+            logger.error("Deblur processing failed: %s", e)
+            return self.basic_pil_preprocessing(image_bytes)
+    
+    def preprocess_for_amharic(self, image_bytes):
+        """Special preprocessing for Amharic script"""
+        try:
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            
+            # Amharic benefits from different processing
+            # Less aggressive denoising to preserve character details
+            denoised = cv2.fastNlMeansDenoising(gray, None, h=15, templateWindowSize=5, searchWindowSize=15)
+            
+            # Moderate contrast enhancement
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            contrast_enhanced = clahe.apply(denoised)
+            
+            # Gentle sharpening
+            kernel = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
+            sharpened = cv2.filter2D(contrast_enhanced, -1, kernel)
+            
+            # Otsu's thresholding for Amharic
+            _, thresh = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            pil_image = Image.fromarray(thresh)
+            return pil_image
+            
+        except Exception as e:
+            logger.error("Amharic preprocessing failed: %s", e)
+            return self.basic_pil_preprocessing(image_bytes)
+    
+    def basic_pil_preprocessing(self, image_bytes):
+        """Basic PIL-based preprocessing fallback"""
+        try:
+            image = Image.open(io.BytesIO(image_bytes)).convert('L')
+            # Enhance contrast
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(2.0)
+            # Enhance sharpness
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(2.0)
+            return image
+        except Exception as e:
+            logger.error("Basic PIL preprocessing failed: %s", e)
             return Image.open(io.BytesIO(image_bytes)).convert('L')
     
     def enhanced_clean_text(self, text):
@@ -220,26 +458,43 @@ class OCRProcessor:
         lines = text.split('\n')
         filtered_lines = []
         prev_empty = False
+        
         for line in lines:
-            stripped = line.lstrip()
+            stripped = line.strip()
             if stripped:
-                filtered_lines.append(line)
+                # Clean the line but preserve original spacing
+                cleaned_line = self.clean_text_line(line)
+                filtered_lines.append(cleaned_line)
                 prev_empty = False
             elif not prev_empty:
                 filtered_lines.append('')
                 prev_empty = True
         
         result = '\n'.join(filtered_lines).rstrip()
-        if len(result.strip()) < 10:
+        
+        if len(result.strip()) < 5:
             return "📝 Very little text detected. Please try:\n• Higher quality image\n• Better lighting conditions\n• Clearer text focus\n• Less complex background"
         
         return result
     
+    def clean_text_line(self, line):
+        """Clean individual text line while preserving structure"""
+        # Remove common OCR artifacts but preserve meaningful characters
+        line = line.replace('|', 'I').replace('0', 'O').replace('1', 'I')
+        
+        # Preserve Amharic and other special characters
+        # Remove only obvious garbage characters
+        import re
+        line = re.sub(r'[^\w\s\u1200-\u137F\u2D80-\u2DDF\uAB00-\uAB2F.,!?;:()\[\]{}\-@#$%&*+=]', '', line)
+        
+        return line
+    
     def fix_bullet_artifacts(self, text):
-        """Fix common bullet artifacts like 'e', 'o', or 'point'"""
+        """Fix common bullet artifacts"""
         lines = text.split('\n')
         fixed_lines = []
         bullet_chars = ['e', 'o', '0', 'point', '•', '*', '-', '–', '°', '·']
+        
         for line in lines:
             stripped = line.strip()
             if stripped:
@@ -248,21 +503,8 @@ class OCRProcessor:
                         line = line.replace(bullet, '•', 1)
                         break
             fixed_lines.append(line)
+        
         return '\n'.join(fixed_lines)
-    
-    def remove_ocr_artifacts(self, text):
-        """Remove common OCR artifacts"""
-        if len(text) == 1 and not text.isalnum():
-            return ""
-        replacements = {
-            '|': 'I',
-            '0': 'O',
-            '1': 'I',
-            '°': '•'
-        }
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        return text
 
 # Global instance
 ocr_processor = OCRProcessor()

@@ -137,11 +137,23 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error logging OCR request: {e}")
         
         # Enhanced response with performance info
-        response_text = (
-            f"📝 **Extracted Text** ({text_format.upper()})\n"
-            f"⏱️ Processed in: {processing_time:.2f}s\n\n"
-            f"{formatted_text}"
-        )
+        if text_format == 'html':
+            response_text = (
+                f"📝 **Extracted Text** (HTML Format)\n"
+                f"⏱️ Processed in: {processing_time:.2f}s\n\n"
+                f"{formatted_text}"
+            )
+            parse_mode = 'HTML'
+        else:
+            response_text = (
+                f"📝 **Extracted Text** (Plain Format)\n"
+                f"⏱️ Processed in: {processing_time:.2f}s\n\n"
+                f"```\n{formatted_text}\n```"
+            )
+            parse_mode = 'Markdown'
+        
+        # Handle long messages
+        messages = TextFormatter.split_long_message(response_text)
         
         # Enhanced format options
         keyboard = [
@@ -155,11 +167,26 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await processing_msg.edit_text(
-            response_text,
-            reply_markup=reply_markup,
-            parse_mode=None
-        )
+        if len(messages) > 1:
+            # Send first part with buttons
+            await processing_msg.edit_text(
+                messages[0],
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+            # Send remaining parts
+            for msg in messages[1:]:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=msg,
+                    parse_mode=parse_mode
+                )
+        else:
+            await processing_msg.edit_text(
+                response_text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
         
         logger.info(f"✅ Successfully processed image for user {user_id}")
         
@@ -261,13 +288,14 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         formatted_text = TextFormatter.format_text(original_text, format_type)
         
         # Enhanced response
-        response_text = f"📝 **Reformatted Text** ({format_type.upper()})\n\n{formatted_text}"
+        if format_type == 'html':
+            response_text = f"📝 **Reformatted Text** ({format_type.upper()})\n\n{formatted_text}"
+            parse_mode = 'HTML'
+        else:
+            response_text = f"📝 **Reformatted Text** ({format_type.upper()})\n\n```\n{formatted_text}\n```"
+            parse_mode = 'Markdown'
         
         # Smart parse mode selection
-        parse_mode = None
-        if format_type == 'html':
-            parse_mode = 'HTML'
-        
         # Enhanced keyboard
         keyboard = [
             [
@@ -308,6 +336,13 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as final_error:
             logger.error(f"Final fallback failed: {final_error}")
             await query.edit_message_text("❌ Error reformatting text. Please process the image again.")
+
+async def handle_convert_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle convert image callback"""
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text("📸 Please send an image containing text to convert.")
 
 # OCR callback handler
 async def handle_ocr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

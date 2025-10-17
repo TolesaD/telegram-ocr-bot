@@ -6,7 +6,7 @@ from telegram.ext import Application, MessageHandler, filters, CommandHandler, C
 from telegram import Update
 from dotenv import load_dotenv
 
-# Configure logging for Railway
+# Configure logging for Railway with enhanced OCR logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
@@ -34,7 +34,7 @@ for key, fallback_value in FALLBACK_VALUES.items():
         os.environ[key] = fallback_value
         logger.warning(f"⚠️ Using fallback for {key}")
 
-# Import database
+# Import database with enhanced error handling
 try:
     from database.mongodb import db
     logger.info("✅ Database imported successfully")
@@ -75,11 +75,25 @@ except ImportError as e:
     db = MockDB()
     logger.info("✅ Using mock database")
 
-# Now import handlers
+# Enhanced OCR imports with better error handling
+try:
+    # Import OCR processor early to catch initialization errors
+    from utils.image_processing import ocr_processor, performance_monitor
+    logger.info("✅ OCR processor imported successfully")
+    
+    # Import text formatter
+    from utils.text_formatter import TextFormatter
+    logger.info("✅ Text formatter imported successfully")
+    
+except ImportError as e:
+    logger.error(f"❌ OCR components import failed: {e}")
+    raise
+
+# Now import handlers with enhanced error handling
 try:
     from handlers.start import start_command, handle_membership_check, force_check_membership, handle_start_callback
     from handlers.help import help_command, handle_help_callback
-    from handlers.ocr import handle_image, handle_reformat
+    from handlers.ocr import handle_image, handle_reformat, handle_ocr_callback
     from handlers.menu import (
         show_main_menu, show_settings_menu, show_statistics,
         handle_convert_image, show_format_menu,
@@ -88,11 +102,47 @@ try:
     logger.info("✅ All handlers imported successfully")
 except ImportError as e:
     logger.error(f"❌ Handler import failed: {e}")
-    raise
+    # Create fallback handlers for critical functionality
+    async def fallback_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("🚀 Bot is starting... Please try again in a moment.")
+    
+    async def fallback_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("❓ Help system is initializing...")
+    
+    async def fallback_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("📸 Image processing is temporarily unavailable. Please try again later.")
+    
+    # Assign fallback handlers
+    start_command = fallback_start
+    help_command = fallback_help
+    handle_image = fallback_image
+    logger.warning("⚠️ Using fallback handlers due to import errors")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle errors gracefully"""
+    """Enhanced error handling with better logging"""
     logger.error(f"Update {update} caused error {context.error}")
+    
+    # Log the full traceback for debugging
+    logger.error(f"Full error: {context.error}", exc_info=context.error)
+    
+    # Send user-friendly error message
+    try:
+        if update and update.effective_chat:
+            error_msg = (
+                "❌ An unexpected error occurred.\n\n"
+                "🔧 **Quick Fixes:**\n"
+                "• Try sending the image again\n"
+                "• Ensure the image is clear and focused\n"
+                "• Check your internet connection\n"
+                "• Try a smaller image size\n\n"
+                "If the problem persists, please contact support."
+            )
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=error_msg
+            )
+    except Exception as e:
+        logger.error(f"Failed to send error message: {e}")
 
 async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text from persistent keyboard"""
@@ -108,8 +158,50 @@ async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🔄 Restart":
         await start_command(update, context)
 
+async def post_init(application: Application):
+    """Enhanced initialization after bot starts"""
+    logger.info("🔄 Running post-initialization checks...")
+    
+    # Check OCR engine status
+    try:
+        ocr_status = "✅ OCR Engine Ready"
+        if hasattr(ocr_processor, 'engines'):
+            active_engines = list(ocr_processor.engines.keys())
+            ocr_status += f" | Engines: {active_engines}"
+        logger.info(ocr_status)
+    except Exception as e:
+        logger.error(f"❌ OCR Engine check failed: {e}")
+    
+    # Check database connection
+    try:
+        if hasattr(db, 'is_mock'):
+            if db.is_mock:
+                logger.warning("⚠️ Using mock database - data will not persist")
+            else:
+                logger.info("✅ Database connection active")
+        else:
+            logger.info("✅ Database connection active")
+    except Exception as e:
+        logger.error(f"❌ Database check failed: {e}")
+    
+    logger.info("🚀 Enhanced OCR Bot is ready!")
+
+async def post_stop(application: Application):
+    """Cleanup when bot stops"""
+    logger.info("🛑 Bot is shutting down...")
+    
+    # Cleanup OCR resources
+    try:
+        if hasattr(ocr_processor, 'thread_pool'):
+            ocr_processor.thread_pool.shutdown(wait=False)
+            logger.info("✅ OCR thread pool shutdown")
+    except Exception as e:
+        logger.error(f"❌ OCR cleanup failed: {e}")
+    
+    logger.info("👋 Bot shutdown complete")
+
 def main():
-    """Main function"""
+    """Enhanced main function with better error handling"""
     try:
         # Get bot token
         BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -121,30 +213,42 @@ def main():
         logger.info(f"✅ BOT_TOKEN found: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
         
         # Railway-specific logging
-        logger.info("🚄 Starting bot on Railway...")
+        logger.info("🚄 Starting Enhanced OCR Bot on Railway...")
         logger.info("📊 Environment: PRODUCTION")
+        logger.info("🌍 Supported: Amharic, Blurry Images, 100+ Languages")
         
-        # Create application
-        application = Application.builder().token(BOT_TOKEN).build()
+        # Create application with enhanced settings
+        application = (
+            Application.builder()
+            .token(BOT_TOKEN)
+            .post_init(post_init)
+            .post_stop(post_stop)
+            .build()
+        )
         
         # Store database in bot_data
         application.bot_data['db'] = db
-        logger.info("✅ Database connected")
+        logger.info("✅ Database connected to bot data")
         
-        # Register handlers
-        application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("settings", show_settings_menu))
-        application.add_handler(CommandHandler("stats", show_statistics))
-        application.add_handler(CommandHandler("check", force_check_membership))
+        # Enhanced handler registration with better patterns
+        handlers = [
+            CommandHandler("start", start_command),
+            CommandHandler("help", help_command),
+            CommandHandler("settings", show_settings_menu),
+            CommandHandler("stats", show_statistics),
+            CommandHandler("check", force_check_membership),
+            
+            MessageHandler(filters.PHOTO, handle_image),
+            MessageHandler(filters.Regex('^(📸 Convert Image|⚙️ Settings|📊 Statistics|❓ Help|🔄 Restart)$'), handle_menu_text),
+        ]
         
-        application.add_handler(MessageHandler(filters.PHOTO, handle_image))
-        application.add_handler(MessageHandler(filters.Regex('^(📸 Convert Image|⚙️ Settings|📊 Statistics|❓ Help|🔄 Restart)$'), handle_menu_text))
+        for handler in handlers:
+            application.add_handler(handler)
         
-        # Callback handlers
+        # Enhanced callback handlers with better error handling
         callback_patterns = [
             ("check_membership", handle_membership_check),
-            ("restart_bot", handle_start_callback),  # Handle restart callback
+            ("restart_bot", handle_start_callback),
             ("main_menu", show_main_menu),
             ("settings", show_settings_menu),
             ("statistics", show_statistics),
@@ -159,20 +263,54 @@ def main():
         for pattern, handler in callback_patterns:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
         
+        # Add OCR-specific callback handler
+        application.add_handler(CallbackQueryHandler(handle_ocr_callback, pattern="^ocr_"))
+        
         # Add error handler
         application.add_error_handler(error_handler)
         
-        logger.info("✅ All handlers registered")
-        logger.info("🚀 Starting bot polling...")
+        logger.info("✅ All handlers registered successfully")
+        logger.info("🔧 Enhanced Features:")
+        logger.info("   • Multi-strategy OCR for blurry images")
+        logger.info("   • Advanced Amharic language support")
+        logger.info("   • Enhanced text formatting")
+        logger.info("   • Better error handling and user feedback")
         
-        # Start the bot
+        # Start the bot with enhanced settings
+        logger.info("🚀 Starting enhanced bot polling...")
+        
         application.run_polling(
             drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
+            allowed_updates=Update.ALL_TYPES,
+            close_loop=False
         )
         
     except Exception as e:
         logger.error(f"❌ Bot crashed: {e}")
+        logger.error("💥 Full crash details:", exc_info=True)
+        
+        # Attempt graceful shutdown
+        try:
+            if 'application' in locals():
+                application.stop()
+                application.shutdown()
+        except:
+            pass
+        
+        # Suggest solutions based on error type
+        if "token" in str(e).lower():
+            logger.error("🔑 BOT_TOKEN might be invalid. Please check your environment variables.")
+        elif "network" in str(e).lower() or "connection" in str(e).lower():
+            logger.error("🌐 Network connection issue. Please check your internet connection.")
+        else:
+            logger.error("💡 Check the logs above for specific error details.")
 
 if __name__ == "__main__":
-    main()
+    # Enhanced startup with better resource management
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("👋 Bot stopped by user")
+    except Exception as e:
+        logger.error(f"💥 Fatal error during startup: {e}")
+        logger.error("Stack trace:", exc_info=True)
