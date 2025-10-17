@@ -63,57 +63,57 @@ class OCRProcessor:
             logger.error(f"OCR processing failed: {e}")
             return f"❌ Processing error: {str(e)}"
     
- async def detect_language_smart(self, processed_image):
-    """Enhanced language detection with better script support"""
-    loop = asyncio.get_event_loop()
-    
-    try:
-        # First try OSD for script detection
-        osd_result = await loop.run_in_executor(
-            thread_pool,
-            self._get_osd_data,
-            processed_image
-        )
+    async def detect_language_smart(self, processed_image):
+        """Enhanced language detection with better script support"""
+        loop = asyncio.get_event_loop()
         
-        # Extract script from OSD
-        script = self._extract_script_from_osd(osd_result)
-        logger.info(f"📜 OSD detected script: {script}")
-        
-        # Try quick extraction with multiple languages to verify
-        test_texts = {}
-        test_languages = ['eng', 'amh', 'ara', 'chi_sim', 'jpn', 'kor']
-        
-        for lang in test_languages:
-            try:
-                text = await self.extract_with_tesseract(processed_image, lang, '--psm 6 --oem 1')
-                if text:
-                    test_texts[lang] = text
-            except:
-                continue
-        
-        # Analyze which language produced the best results
-        best_lang = 'eng'
-        best_confidence = 0
-        
-        for lang, text in test_texts.items():
-            script = detect_script_from_text(text)
-            expected_lang = get_language_from_script(script)
+        try:
+            # First try OSD for script detection
+            osd_result = await loop.run_in_executor(
+                thread_pool,
+                self._get_osd_data,
+                processed_image
+            )
             
-            # Convert Tesseract code to our language code
-            lang_map = {'eng': 'en', 'amh': 'am', 'ara': 'ar', 'chi_sim': 'zh', 'jpn': 'ja', 'kor': 'ko'}
-            current_lang = lang_map.get(lang, 'en')
+            # Extract script from OSD
+            script = self._extract_script_from_osd(osd_result)
+            logger.info(f"📜 OSD detected script: {script}")
             
-            is_valid, message = validate_text_quality(text, current_lang)
-            if is_valid and len(text) > best_confidence:
-                best_lang = current_lang
-                best_confidence = len(text)
-        
-        logger.info(f"🎯 Final language selection: {best_lang}")
-        return best_lang
-        
-    except Exception as e:
-        logger.warning(f"Language detection failed: {e}, defaulting to English")
-        return 'en'
+            # Try quick extraction with multiple languages to verify
+            test_texts = {}
+            test_languages = ['eng', 'amh', 'ara', 'chi_sim', 'jpn', 'kor']
+            
+            for lang in test_languages:
+                try:
+                    text = await self.extract_with_tesseract(processed_image, lang, '--psm 6 --oem 1')
+                    if text:
+                        test_texts[lang] = text
+                except:
+                    continue
+            
+            # Analyze which language produced the best results
+            best_lang = 'eng'
+            best_confidence = 0
+            
+            for lang, text in test_texts.items():
+                script = self._detect_script_from_text(text)
+                expected_lang = self._get_language_from_script(script)
+                
+                # Convert Tesseract code to our language code
+                lang_map = {'eng': 'en', 'amh': 'am', 'ara': 'ar', 'chi_sim': 'zh', 'jpn': 'ja', 'kor': 'ko'}
+                current_lang = lang_map.get(lang, 'en')
+                
+                is_valid, message = self._validate_text_quality(text, current_lang)
+                if is_valid and len(text) > best_confidence:
+                    best_lang = current_lang
+                    best_confidence = len(text)
+            
+            logger.info(f"🎯 Final language selection: {best_lang}")
+            return best_lang
+            
+        except Exception as e:
+            logger.warning(f"Language detection failed: {e}, defaulting to English")
+            return 'en'
     
     def _get_osd_data(self, image):
         """Get OSD data from image"""
@@ -131,6 +131,58 @@ class OCRProcessor:
             if line.startswith('Script:'):
                 return line.split(':')[1].strip()
         return "Unknown"
+    
+    def _detect_script_from_text(self, text):
+        """Detect script from text content"""
+        if not text:
+            return "Unknown"
+        
+        # Simple script detection based on character ranges
+        amharic_chars = sum(1 for c in text if is_amharic_character(c))
+        english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
+        arabic_chars = sum(1 for c in text if '\u0600' <= c <= '\u06FF')
+        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        japanese_chars = sum(1 for c in text if ('\u3040' <= c <= '\u309F' or '\u30A0' <= c <= '\u30FF'))
+        korean_chars = sum(1 for c in text if '\uAC00' <= c <= '\uD7A3')
+        
+        if amharic_chars > 0:
+            return "Amharic"
+        elif arabic_chars > 0:
+            return "Arabic"
+        elif chinese_chars > 0:
+            return "Chinese"
+        elif japanese_chars > 0:
+            return "Japanese"
+        elif korean_chars > 0:
+            return "Korean"
+        elif english_chars > 0:
+            return "Latin"
+        else:
+            return "Unknown"
+    
+    def _get_language_from_script(self, script):
+        """Convert script name to language code"""
+        script_map = {
+            "Amharic": "am",
+            "Arabic": "ar", 
+            "Chinese": "zh",
+            "Japanese": "ja",
+            "Korean": "ko",
+            "Latin": "en"
+        }
+        return script_map.get(script, "en")
+    
+    def _validate_text_quality(self, text, language):
+        """Validate text quality for a given language"""
+        if not text or len(text.strip()) < 3:
+            return False, "Text too short"
+        
+        # Basic validation - check if text has reasonable character diversity
+        unique_chars = len(set(text))
+        if unique_chars < 2:
+            return False, "Not enough character diversity"
+        
+        return True, "Valid text"
     
     def is_likely_english(self, text):
         """Check if text is likely English"""
