@@ -63,41 +63,57 @@ class OCRProcessor:
             logger.error(f"OCR processing failed: {e}")
             return f"❌ Processing error: {str(e)}"
     
-    async def detect_language_smart(self, processed_image):
-        """Smart language detection that doesn't assume Amharic"""
-        loop = asyncio.get_event_loop()
+ async def detect_language_smart(self, processed_image):
+    """Enhanced language detection with better script support"""
+    loop = asyncio.get_event_loop()
+    
+    try:
+        # First try OSD for script detection
+        osd_result = await loop.run_in_executor(
+            thread_pool,
+            self._get_osd_data,
+            processed_image
+        )
         
-        try:
-            # First, try to detect script using OSD
-            osd_result = await loop.run_in_executor(
-                thread_pool,
-                self._get_osd_data,
-                processed_image
-            )
+        # Extract script from OSD
+        script = self._extract_script_from_osd(osd_result)
+        logger.info(f"📜 OSD detected script: {script}")
+        
+        # Try quick extraction with multiple languages to verify
+        test_texts = {}
+        test_languages = ['eng', 'amh', 'ara', 'chi_sim', 'jpn', 'kor']
+        
+        for lang in test_languages:
+            try:
+                text = await self.extract_with_tesseract(processed_image, lang, '--psm 6 --oem 1')
+                if text:
+                    test_texts[lang] = text
+            except:
+                continue
+        
+        # Analyze which language produced the best results
+        best_lang = 'eng'
+        best_confidence = 0
+        
+        for lang, text in test_texts.items():
+            script = detect_script_from_text(text)
+            expected_lang = get_language_from_script(script)
             
-            script = self._extract_script_from_osd(osd_result)
-            logger.info(f"📜 OSD detected script: {script}")
+            # Convert Tesseract code to our language code
+            lang_map = {'eng': 'en', 'amh': 'am', 'ara': 'ar', 'chi_sim': 'zh', 'jpn': 'ja', 'kor': 'ko'}
+            current_lang = lang_map.get(lang, 'en')
             
-            # If script is clearly Ethiopic, use Amharic
-            if script in ['Ethiopic', 'Ge\'ez', 'Amharic']:
-                return 'amh'
-            
-            # Try quick English extraction to check if it's English
-            english_text = await self.extract_with_tesseract(processed_image, 'eng', '--oem 3 --psm 6')
-            if english_text and self.is_likely_english(english_text):
-                return 'eng'
-            
-            # Try Amharic extraction to check if it's Amharic
-            amharic_text = await self.extract_with_tesseract(processed_image, 'amh', '--oem 1 --psm 6')
-            if amharic_text and self.is_likely_amharic(amharic_text):
-                return 'amh'
-            
-            # Default to English for unknown cases
-            return 'eng'
-            
-        except Exception as e:
-            logger.warning(f"Language detection failed: {e}, defaulting to English")
-            return 'eng'
+            is_valid, message = validate_text_quality(text, current_lang)
+            if is_valid and len(text) > best_confidence:
+                best_lang = current_lang
+                best_confidence = len(text)
+        
+        logger.info(f"🎯 Final language selection: {best_lang}")
+        return best_lang
+        
+    except Exception as e:
+        logger.warning(f"Language detection failed: {e}, defaulting to English")
+        return 'en'
     
     def _get_osd_data(self, image):
         """Get OSD data from image"""
