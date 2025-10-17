@@ -1,5 +1,6 @@
 # ocr_engine/language_support.py
-# Enhanced language support with 100+ languages (assuming all Tesseract packs installed)
+# Enhanced language support with 100+ languages and improved Amharic handling
+
 LANGUAGE_MAPPING = {
     'af': 'Afrikaans', 'ar': 'Arabic', 'az': 'Azerbaijani', 'be': 'Belarusian',
     'bg': 'Bulgarian', 'bn': 'Bengali', 'bs': 'Bosnian', 'ca': 'Catalan',
@@ -53,7 +54,7 @@ TESSERACT_LANGUAGES = {
     'th': 'tha', 'tl': 'tgl', 'tr': 'tur', 'uk': 'ukr', 'ur': 'urd',
     'uz': 'uzb', 'vi': 'vie', 'xh': 'xho', 'yi': 'yid', 'yo': 'yor',
     'zh': 'chi_sim', 'zu': 'zul',
-    # Added more
+    # Enhanced support for African languages
     'am': 'amh+amh_vert', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
     'ln': 'lin', 'lu': 'lua', 'nd': 'nde', 'om': 'orm', 'rn': 'run',
     'rw': 'kin', 'sg': 'sag', 'sn': 'sna', 'ss': 'ssw', 'ti': 'tir',
@@ -120,3 +121,130 @@ def is_amharic_character(char):
     return ('\u1200' <= char <= '\u137F' or 
             '\u2D80' <= char <= '\u2DDF' or 
             '\uAB00' <= char <= '\uAB2F')
+
+def get_lang_from_script(script):
+    """Map script to language code with enhanced detection"""
+    mapping = {
+        'Latin': 'eng',
+        'Cyrillic': 'rus',
+        'Arabic': 'ara',
+        'Devanagari': 'hin',
+        'HanS': 'chi_sim',
+        'Hangul': 'kor',
+        'Japanese': 'jpn',
+        'Tamil': 'tam',
+        'Telugu': 'tel',
+        'Kannada': 'kan',
+        'Malayalam': 'mal',
+        'Gujarati': 'guj',
+        'Gurmukhi': 'pan',
+        'Bengali': 'ben',
+        'Amharic': 'amh',
+        'Ethiopic': 'amh',
+        'Ge\'ez': 'amh',  # Add Ge'ez as another name for Ethiopic script
+        'Hebrew': 'heb',
+        'Armenian': 'hye',
+        'Georgian': 'kat',
+        'Thai': 'tha',
+        'Lao': 'lao',
+        'Khmer': 'khm',
+        'Myanmar': 'mya',
+        'Sinhala': 'sin',
+        'Greek': 'ell',
+        'Oriya': 'ori',
+        'Sindhi': 'snd',
+        'Tibetan': 'bod'
+    }
+    return mapping.get(script, 'eng')  # Default to English for unknown scripts
+
+def detect_primary_language(text):
+    """Detect the primary language of text"""
+    if not text or len(text.strip()) < 3:
+        return 'unknown'
+    
+    # Count Amharic characters
+    amharic_chars = sum(1 for c in text if is_amharic_character(c))
+    
+    # Count English letters
+    english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
+    
+    total_chars = len(text)
+    
+    if total_chars == 0:
+        return 'unknown'
+    
+    amharic_ratio = amharic_chars / total_chars
+    english_ratio = english_chars / total_chars
+    
+    # Determine primary language
+    if amharic_ratio > 0.3:
+        return 'amh'
+    elif english_ratio > 0.7:
+        return 'eng'
+    else:
+        return 'mixed'
+
+def get_optimal_ocr_config(language):
+    """Get optimal OCR configuration for specific language"""
+    configs = {
+        'amh': '--oem 1 --psm 6 -c preserve_interword_spaces=1',
+        'eng': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
+        'mixed': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
+        'unknown': '--oem 3 --psm 6 -c preserve_interword_spaces=1'
+    }
+    return configs.get(language, configs['unknown'])
+
+def validate_amharic_text(text):
+    """Validate if text contains meaningful Amharic content"""
+    if not text:
+        return False
+    
+    # Count Amharic characters
+    amharic_chars = sum(1 for c in text if is_amharic_character(c))
+    total_chars = len(text.strip())
+    
+    if total_chars < 5:
+        return False
+    
+    # At least 20% should be Amharic characters to be considered valid Amharic
+    return (amharic_chars / total_chars) > 0.2
+
+def validate_english_text(text):
+    """Validate if text contains meaningful English content"""
+    if not text:
+        return False
+    
+    # Count English letters and common punctuation
+    english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
+    total_chars = len(text.strip())
+    
+    if total_chars < 5:
+        return False
+    
+    # At least 60% should be English letters to be considered valid English
+    return (english_chars / total_chars) > 0.6
+
+# Language detection confidence thresholds
+CONFIDENCE_THRESHOLDS = {
+    'amh': 0.3,  # 30% Amharic characters
+    'eng': 0.6,  # 60% English characters
+    'mixed': 0.1  # 10% mixed content
+}
+
+def get_language_confidence(text, language):
+    """Calculate confidence level for detected language"""
+    if not text:
+        return 0.0
+    
+    total_chars = len(text.strip())
+    if total_chars == 0:
+        return 0.0
+    
+    if language == 'amh':
+        amharic_chars = sum(1 for c in text if is_amharic_character(c))
+        return amharic_chars / total_chars
+    elif language == 'eng':
+        english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
+        return english_chars / total_chars
+    else:
+        return 0.5  # Default confidence for mixed/unknown
