@@ -1,3 +1,4 @@
+# utils/image_processing.py
 import asyncio
 import logging
 import time
@@ -77,16 +78,8 @@ class OCRProcessor:
                 logger.warning(f"Language {lang_code} not available, using English")
                 lang_code = 'eng'
             
-            # Force Amharic for Ethiopic script
-            if script == 'Ethiopic' and 'amh' in available_langs:
-                lang_code = 'amh'
-                logger.info("Forcing Amharic language for Ethiopic script")
-            
             text = await self.extract_with_tesseract_enhanced(processed_image, lang_code)
             text = self.fix_bullet_artifacts(text)
-            
-            # Log raw OCR output for debugging
-            logger.info(f"Raw OCR output: {text[:100]}...")
             
             processing_time = time.time() - start_time
             logger.info("⚡ Tesseract processed in %.2fs", processing_time)
@@ -105,13 +98,9 @@ class OCRProcessor:
                 pytesseract.image_to_osd,
                 image
             )
-            logger.debug(f"OSD output: {osd}")
             for line in osd.split('\n'):
                 if line.startswith('Script:'):
-                    script = line.split(':')[1].strip()
-                    logger.info(f"Detected script: {script}")
-                    return script
-            logger.warning("No script detected, defaulting to Latin")
+                    return line.split(':')[1].strip()
             return 'Latin'
         except Exception as e:
             logger.error(f"Script detection failed: {e}")
@@ -149,76 +138,7 @@ class OCRProcessor:
             'Sindhi': 'snd',
             'Tibetan': 'bod',
             'Swahili': 'swa',
-            'Yoruba': 'yor',
-            'Urdu': 'urd',
-            'Persian': 'fas',
-            'Pashto': 'pus',
-            'Divehi': 'div',
-            'Tigrinya': 'tir',
-            'Zulu': 'zul',
-            'Xhosa': 'xho',
-            'Afrikaans': 'afr',
-            'Albanian': 'sqi',
-            'Azerbaijani': 'aze',
-            'Belarusian': 'bel',
-            'Bosnian': 'bos',
-            'Bulgarian': 'bul',
-            'Catalan': 'cat',
-            'Cebuano': 'ceb',
-            'Chichewa': 'nya',
-            'Croatian': 'hrv',
-            'Czech': 'ces',
-            'Danish': 'dan',
-            'Dutch': 'nld',
-            'Esperanto': 'epo',
-            'Estonian': 'est',
-            'Finnish': 'fin',
-            'French': 'fra',
-            'Galician': 'glg',
-            'German': 'deu',
-            'Greek': 'ell',
-            'Hausa': 'hau',
-            'Hungarian': 'hun',
-            'Icelandic': 'isl',
-            'Igbo': 'ibo',
-            'Indonesian': 'ind',
-            'Irish': 'gle',
-            'Italian': 'ita',
-            'Javanese': 'jav',
-            'Kazakh': 'kaz',
-            'Kyrgyz': 'kir',
-            'Latvian': 'lav',
-            'Lithuanian': 'lit',
-            'Luxembourgish': 'ltz',
-            'Macedonian': 'mkd',
-            'Malagasy': 'mlg',
-            'Malay': 'msa',
-            'Maltese': 'mlt',
-            'Maori': 'mri',
-            'Mongolian': 'mon',
-            'Nepali': 'nep',
-            'Norwegian': 'nor',
-            'Polish': 'pol',
-            'Portuguese': 'por',
-            'Romanian': 'ron',
-            'Serbian': 'srp',
-            'Shona': 'sna',
-            'Slovak': 'slk',
-            'Slovenian': 'slv',
-            'Somali': 'som',
-            'Sotho': 'sot',
-            'Spanish': 'spa',
-            'Sundanese': 'sun',
-            'Swahili': 'swa',
-            'Swedish': 'swe',
-            'Tagalog': 'tgl',
-            'Tajik': 'tgk',
-            'Turkish': 'tur',
-            'Ukrainian': 'ukr',
-            'Uzbek': 'uzb',
-            'Vietnamese': 'vie',
-            'Welsh': 'cym',
-            'Yiddish': 'yid'
+            'Yoruba': 'yor'
         }
         lang_code = mapping.get(script, 'eng')
         available_langs = self.get_tesseract_languages()
@@ -239,7 +159,7 @@ class OCRProcessor:
         try:
             config = '--oem 3 --psm 3 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'
             if lang_code == 'amh':
-                config = '--oem 0 --psm 6 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'
+                config = '--oem 0 --psm 6 -c preserve_interword_spaces=1 -c textord_force_make_proportional=1'  # Legacy for Amharic
             text = pytesseract.image_to_string(
                 image,
                 lang=lang_code,
@@ -263,7 +183,7 @@ class OCRProcessor:
             image = Image.open(io.BytesIO(image_bytes))
             original_width, original_height = image.size
             
-            max_dim = 2000
+            max_dim = 2000  # Increased for better detail
             if max(image.size) > max_dim:
                 scale = max_dim / max(image.size)
                 new_width = int(image.width * scale)
@@ -276,14 +196,15 @@ class OCRProcessor:
                 image = image.convert('L')
             
             enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(2.5)  # Reduced for Amharic
+            image = enhancer.enhance(4.0)  # Increased for better bullet recognition
             enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(2.0)  # Reduced for Amharic
+            image = enhancer.enhance(3.5)
             enhancer = ImageEnhance.Brightness(image)
-            image = enhancer.enhance(1.2)  # Adjusted for Amharic
+            image = enhancer.enhance(1.3)
             image = image.filter(ImageFilter.MedianFilter(size=3))
             image = image.filter(ImageFilter.EDGE_ENHANCE)
-            image = ImageOps.autocontrast(image, cutoff=3)  # Reduced cutoff
+            image = image.filter(ImageFilter.GaussianBlur(radius=0.5))  # Add slight blur for denoising blurry images
+            image = ImageOps.autocontrast(image, cutoff=5)
             
             return image
             

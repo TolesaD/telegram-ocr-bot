@@ -1,3 +1,4 @@
+# config.py
 import os
 from dotenv import load_dotenv
 
@@ -8,11 +9,11 @@ load_dotenv()
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB for Railway
 PROCESSING_TIMEOUT = 45  # seconds
 
-# Text Formatting Options (replaced markdown with copiable)
-FORMAT_OPTIONS = ['plain', 'html', 'copiable']
+# Text Formatting Options
+FORMAT_OPTIONS = ['plain', 'html']
 
 # Support Bot
-SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConverterSupportBot')
+SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConvertorSupportBot')
 
 # Channel Configuration
 ANNOUNCEMENT_CHANNEL = "@ImageToTextConverter"

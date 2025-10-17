@@ -1,3 +1,4 @@
+# handlers/menu.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -79,7 +80,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
 async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show text format selection menu (replaced markdown with copiable)"""
+    """Show text format selection menu"""
     user_id = update.effective_user.id
     
     # Get current format
@@ -93,10 +94,7 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton("📄 Plain Text", callback_data="set_format_plain"),
-            InlineKeyboardButton("📋 Copiable", callback_data="set_format_copiable")
-        ],
-        [
-            InlineKeyboardButton("🌐 HTML", callback_data="set_format_html")
+            InlineKeyboardButton("🌐 HTML(Copy Code)", callback_data="set_format_html")
         ],
         [InlineKeyboardButton("🔙 Back to Settings", callback_data="settings")]
     ]
@@ -104,7 +102,6 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     format_info = {
         'plain': "Simple text without formatting",
-        'copiable': "Clean text optimized for easy copying",
         'html': "Text with HTML tags for web use"
     }
     
@@ -113,8 +110,7 @@ async def show_format_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Current: {current_format.upper()}\n\n"
         f"Choose your preferred text format:\n"
         f"• 📄 Plain: {format_info['plain']}\n"
-        f"• 📋 Copiable: {format_info['copiable']}\n"
-        f"• 🌐 HTML: {format_info['html']}"
+        f"• 🌐 HTML(Copy Code): {format_info['html']}"
     )
     
     if update.callback_query:

@@ -1,3 +1,4 @@
+# handlers/help.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import config
@@ -18,7 +19,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     help_text = (
         "❓ *Help Center*\n\n"
-        "Welcome to the Image-to-Text Convertor Bot! Select an option to learn more:\n\n"
+        "Welcome to the Image-to-Text Converter Bot! Select an option to learn more:\n\n"
         "• 📸 *How to Use*: Learn how to convert images\n"
         "• 🌐 *Supported Languages*: Over 100 languages supported\n"
         "• 📝 *Formats*: Available text output formats\n"
@@ -52,7 +53,7 @@ async def handle_help_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "📸 *How to Use*\n\n"
             "1. Send an image containing text\n"
             "2. The bot automatically detects the language\n"
-            "3. Choose your preferred format (Plain, HTML, Copiable)\n"
+            "3. Choose your preferred format (Plain, HTML(Copy Code))\n"
             "4. Get the extracted text!\n\n"
             "💡 *Tips for Best Results*:\n"
             "• Use clear, well-lit images\n"
@@ -94,8 +95,7 @@ async def handle_help_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "📝 *Available Formats*\n\n"
             "Choose how you want your text output:\n"
             "• 📄 *Plain*: Simple text without formatting\n"
-            "• 🌐 *HTML*: Text with HTML tags for web use\n"
-            "• 📋 *Copiable*: Clean text optimized for easy copying\n\n"
+            "• 🌐 *HTML(Copy Code)*: Text with HTML tags for web use\n\n"
             "Change format in Settings!"
         )
         keyboard = [[InlineKeyboardButton("🔙 Back to Help", callback_data="help")]]

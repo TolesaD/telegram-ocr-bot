@@ -1,3 +1,4 @@
+# handlers/start.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -71,7 +72,7 @@ async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     message_text = (
-        "👋 *Welcome to Image-to-Text Convertor Bot!*\n\n"
+        "👋 *Welcome to Image-to-Text Converter Bot!*\n\n"
         "📢 *Join Our Channel First*\n\n"
         "Please join our channel to use this bot:\n"
         "• 🚀 Get updates and new features\n"
@@ -157,21 +158,22 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     
     welcome_text = (
         f"🎉 *Welcome {user.first_name}!*\n\n"
-        "🤖 *Image-to-Text Convertor Bot*\n\n"
+        "🤖 *Image-to-Text Converter Bot*\n\n"
         "✨ *Features:*\n"
         "• 🚀 Optimized text extraction\n"
-        "• 🌐 Supports over 100 languages\n"
-        "• 📝 Formats: Plain, HTML, Copiable\n"
-        "• 💾 Saves your preferences\n\n"
+        "• 🔍 Supports over 100 languages automatically\n"
+        "• 📝 Multiple text formats\n"
+        "• 💾 Your preferences saved\n\n"
         "📸 *How to use:*\n"
-        "1. Send an image with text\n"
-        "2. Get extracted text in your format\n"
-        "3. Choose formats via Settings\n\n"
-        "💡 *Tips:*\n"
-        "• Use clear, high-contrast images\n"
-        "• Crop to text area\n"
-        "• Ensure good lighting\n"
-        "Use the Menu below or pinned message to navigate! 🎯"
+        "1. Send me any image with text\n"
+        "2. I'll extract and format the text\n"
+        "3. Choose your preferred format\n\n"
+        "💡 *For best results:*\n"
+        "• Clear, well-lit images\n"
+        "• Focused, non-blurry text\n"
+        "• High contrast\n"
+        "• Crop to text area\n\n"
+        "Use the menu below or the pinned message to explore! 🎯"
     )
     
     if db and hasattr(db, 'is_mock') and db.is_mock:
@@ -189,7 +191,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     keyboard = [[InlineKeyboardButton("🔄 Restart the bot", callback_data="restart_bot")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     restart_message = await update.effective_chat.send_message(
-        "🔄 *Restart the bot*\nClick to restart anytime!",
+        "🔄 *Restart the bot*\nClick the button to restart the bot at any time!",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -206,8 +208,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Add persistent keyboard with multiple menu buttons
     keyboard = [
         ['📸 Convert Image', '⚙️ Settings'],
-        ['📊 Statistics', '❓ Help'],
-        ['🔄 Restart']
+        ['📊 Statistics', '❓ Help']
     ]
     reply_markup = ReplyKeyboardMarkup(
         keyboard,
@@ -215,8 +216,8 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         is_persistent=True,
         one_time_keyboard=False
     )
-    await update.effective_chat.send_message(
-        "Use the buttons below to navigate.",
+    await update.effective_message.reply_text(
+        "Use the buttons below to navigate the menu.",
         reply_markup=reply_markup
     )
     

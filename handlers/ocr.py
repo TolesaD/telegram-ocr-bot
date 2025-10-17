@@ -1,3 +1,4 @@
+# handlers/ocr.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
@@ -36,7 +37,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Remove expired cache entry
             processing_cache.pop(user_id, None)
     
-    # Get user settings
+    # Get user settings (no language, only format)
     try:
         user = db.get_user(user_id) if db else None
         user_settings = user.get('settings', {}) if user else {}
@@ -45,6 +46,8 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_settings = {}
     
     text_format = user_settings.get('text_format', 'plain')
+    
+    # No language selection - auto detection handled in OCR
     
     # Mark as processing with enhanced tracking
     processing_cache[user_id] = {
@@ -140,12 +143,11 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{formatted_text}"
         )
         
-        # Updated format options
+        # Enhanced format options
         keyboard = [
             [
                 InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{message.message_id}"),
-                InlineKeyboardButton("📋 Copiable", callback_data=f"reformat_copiable_{message.message_id}"),
-                InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{message.message_id}")
+                InlineKeyboardButton("🌐 HTML(Copy Code)", callback_data=f"reformat_html_{message.message_id}")
             ],
             [
                 InlineKeyboardButton("🔄 Process Again", callback_data="convert_image")
@@ -156,7 +158,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await processing_msg.edit_text(
             response_text,
             reply_markup=reply_markup,
-            parse_mode='HTML' if text_format == 'html' else None
+            parse_mode=None
         )
         
         logger.info(f"✅ Successfully processed image for user {user_id}")
@@ -262,14 +264,15 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response_text = f"📝 **Reformatted Text** ({format_type.upper()})\n\n{formatted_text}"
         
         # Smart parse mode selection
-        parse_mode = 'HTML' if format_type == 'html' else None
+        parse_mode = None
+        if format_type == 'html':
+            parse_mode = 'HTML'
         
-        # Updated format options
+        # Enhanced keyboard
         keyboard = [
             [
                 InlineKeyboardButton("📄 Plain", callback_data=f"reformat_plain_{original_message_id}"),
-                InlineKeyboardButton("📋 Copiable", callback_data=f"reformat_copiable_{original_message_id}"),
-                InlineKeyboardButton("🌐 HTML", callback_data=f"reformat_html_{original_message_id}")
+                InlineKeyboardButton("🌐 HTML(Copy Code)", callback_data=f"reformat_html_{original_message_id}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)

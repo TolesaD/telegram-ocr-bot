@@ -1,3 +1,4 @@
+# utils/text_formatter.py
 import html
 import re
 
@@ -11,26 +12,6 @@ class TextFormatter:
         # Remove excessive whitespace but preserve structure
         lines = [line.strip() for line in text.split('\n')]
         return '\n'.join(line for line in lines if line)
-    
-    @staticmethod
-    def format_copiable(text):
-        """Format text for easy copying with clean structure"""
-        if not text:
-            return ""
-        # Clean text with preserved bullets and minimal formatting
-        lines = text.split('\n')
-        cleaned_lines = []
-        for line in lines:
-            stripped = line.strip()
-            if stripped:
-                # Preserve bullets
-                if stripped.startswith(('•', '-', '*', '–')):
-                    cleaned_lines.append(f"• {stripped.lstrip('•-*– ')}")
-                else:
-                    cleaned_lines.append(stripped)
-            else:
-                cleaned_lines.append("")
-        return '\n'.join(cleaned_lines).rstrip()
     
     @staticmethod
     def format_html(text):
@@ -50,6 +31,7 @@ class TextFormatter:
                 line = line.strip()
                 if line:
                     # Use <b>, <i>, <u>, <code>, <pre> tags only (Telegram supported)
+                    # For paragraphs, we'll use bold for emphasis
                     if len(line) > 50:  # Long lines as paragraphs
                         html_lines.append(f"<b>{line}</b>")
                     else:
@@ -59,7 +41,7 @@ class TextFormatter:
             
             formatted_text = '\n'.join(html_lines)
             
-            # Use <pre> tag for code-like formatting
+            # Use <pre> tag for code-like formatting (Telegram supports this)
             return f"<pre>{formatted_text}</pre>"
         except:
             # Fallback to plain text in <pre> tags
@@ -74,12 +56,11 @@ class TextFormatter:
         format_type = format_type.lower()
         
         try:
-            if format_type == 'copiable':
-                return TextFormatter.format_copiable(text)
-            elif format_type == 'html':
+            if format_type == 'html':
                 return TextFormatter.format_html(text)
             else:  # plain or any other type
                 return TextFormatter.format_plain(text)
         except Exception as e:
-            logger.error(f"Formatting error: {e}")
+            # Enhanced error handling
+            print(f"Formatting error: {e}")
             return text
