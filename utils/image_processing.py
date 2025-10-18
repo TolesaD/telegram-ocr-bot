@@ -2,12 +2,15 @@
 import asyncio
 import logging
 import time
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import io
 import os
 import pytesseract
 from concurrent.futures import ThreadPoolExecutor
-from ocr_engine.language_support import get_tesseract_code, get_amharic_config, is_amharic_character
+from ocr_engine.language_support import (
+    get_tesseract_code, get_amharic_config, is_amharic_character,
+    detect_primary_language, clean_amharic_text, get_optimal_ocr_config
+)
 
 logger = logging.getLogger(__name__)
 thread_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ocr_")
@@ -31,10 +34,10 @@ class OCRProcessor:
         start_time = time.time()
         
         try:
-            # Gentle preprocessing
-            processed_image = await asyncio.get_event_loop().run_in_executor(
+            # Enhanced preprocessing with script-specific adjustments
+            processed_image, image_size = await asyncio.get_event_loop().run_in_executor(
                 thread_pool,
-                self.preservative_preprocessing,
+                self.enhanced_preprocessing,
                 image_bytes
             )
             
@@ -42,19 +45,19 @@ class OCRProcessor:
             detected_language = await self.detect_language_smart(processed_image)
             logger.info(f"🔍 Detected language: {detected_language}")
             
-            # Extract text based on detected language
-            if detected_language == 'amh':
-                text = await self.amharic_specific_ocr(processed_image, image_bytes)
+            # Extract text based on detected language with size-aware config
+            if detected_language == 'am':
+                text = await self.amharic_specific_ocr(processed_image, image_size)
             else:
-                text = await self.english_or_auto_ocr(processed_image, detected_language)
+                text = await self.english_or_auto_ocr(processed_image, detected_language, image_size)
             
             processing_time = time.time() - start_time
             
             if not text or len(text.strip()) < 2:
                 return "🔍 No readable text found. Please try a clearer image."
             
-            # Clean text while preserving formatting
-            cleaned_text = self.preservative_clean_text(text)
+            # Enhanced text cleaning based on language
+            cleaned_text = self.enhanced_clean_text(text, detected_language)
             
             logger.info(f"✅ {detected_language.upper()} OCR completed in {processing_time:.2f}s")
             return cleaned_text
@@ -79,34 +82,41 @@ class OCRProcessor:
             script = self._extract_script_from_osd(osd_result)
             logger.info(f"📜 OSD detected script: {script}")
             
-            # Try quick extraction with multiple languages to verify
+            # Quick extraction with primary languages first
             test_texts = {}
             test_languages = ['eng', 'amh', 'ara', 'chi_sim', 'jpn', 'kor']
             
             for lang in test_languages:
                 try:
                     text = await self.extract_with_tesseract(processed_image, lang, '--psm 6 --oem 1')
-                    if text:
+                    if text and len(text.strip()) > 3:
                         test_texts[lang] = text
                 except:
                     continue
             
             # Analyze which language produced the best results
-            best_lang = 'eng'
+            best_lang = 'en'
             best_confidence = 0
             
             for lang, text in test_texts.items():
-                script = self._detect_script_from_text(text)
-                expected_lang = self._get_language_from_script(script)
-                
                 # Convert Tesseract code to our language code
                 lang_map = {'eng': 'en', 'amh': 'am', 'ara': 'ar', 'chi_sim': 'zh', 'jpn': 'ja', 'kor': 'ko'}
                 current_lang = lang_map.get(lang, 'en')
                 
-                is_valid, message = self._validate_text_quality(text, current_lang)
-                if is_valid and len(text) > best_confidence:
-                    best_lang = current_lang
-                    best_confidence = len(text)
+                # Use language detection to validate
+                detected_primary = detect_primary_language(text)
+                
+                if detected_primary == current_lang:
+                    confidence = len(text.strip())
+                    if confidence > best_confidence:
+                        best_lang = current_lang
+                        best_confidence = confidence
+            
+            # Fallback to script detection if no good match
+            if best_confidence < 10:
+                script_lang = self._get_language_from_script(script)
+                if script_lang:
+                    best_lang = script_lang
             
             logger.info(f"🎯 Final language selection: {best_lang}")
             return best_lang
@@ -132,34 +142,6 @@ class OCRProcessor:
                 return line.split(':')[1].strip()
         return "Unknown"
     
-    def _detect_script_from_text(self, text):
-        """Detect script from text content"""
-        if not text:
-            return "Unknown"
-        
-        # Simple script detection based on character ranges
-        amharic_chars = sum(1 for c in text if is_amharic_character(c))
-        english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-        arabic_chars = sum(1 for c in text if '\u0600' <= c <= '\u06FF')
-        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-        japanese_chars = sum(1 for c in text if ('\u3040' <= c <= '\u309F' or '\u30A0' <= c <= '\u30FF'))
-        korean_chars = sum(1 for c in text if '\uAC00' <= c <= '\uD7A3')
-        
-        if amharic_chars > 0:
-            return "Amharic"
-        elif arabic_chars > 0:
-            return "Arabic"
-        elif chinese_chars > 0:
-            return "Chinese"
-        elif japanese_chars > 0:
-            return "Japanese"
-        elif korean_chars > 0:
-            return "Korean"
-        elif english_chars > 0:
-            return "Latin"
-        else:
-            return "Unknown"
-    
     def _get_language_from_script(self, script):
         """Convert script name to language code"""
         script_map = {
@@ -168,21 +150,11 @@ class OCRProcessor:
             "Chinese": "zh",
             "Japanese": "ja",
             "Korean": "ko",
-            "Latin": "en"
+            "Latin": "en",
+            "Cyrillic": "ru",
+            "Devanagari": "hi"
         }
         return script_map.get(script, "en")
-    
-    def _validate_text_quality(self, text, language):
-        """Validate text quality for a given language"""
-        if not text or len(text.strip()) < 3:
-            return False, "Text too short"
-        
-        # Basic validation - check if text has reasonable character diversity
-        unique_chars = len(set(text))
-        if unique_chars < 2:
-            return False, "Not enough character diversity"
-        
-        return True, "Valid text"
     
     def is_likely_english(self, text):
         """Check if text is likely English"""
@@ -196,9 +168,9 @@ class OCRProcessor:
         if total_chars < 5:
             return False
         
-        # At least 70% should be English letters
+        # At least 60% should be English letters
         english_ratio = english_chars / total_chars
-        return english_ratio > 0.7
+        return english_ratio > 0.6
     
     def is_likely_amharic(self, text):
         """Check if text is likely Amharic"""
@@ -212,17 +184,17 @@ class OCRProcessor:
         if total_chars < 3:
             return False
         
-        # At least 30% should be Amharic characters to be considered Amharic
+        # At least 20% should be Amharic characters to be considered Amharic
         amharic_ratio = amharic_chars / total_chars
-        return amharic_ratio > 0.3
+        return amharic_ratio > 0.2
     
-    async def amharic_specific_ocr(self, processed_image, original_image_bytes):
-        """Amharic-specific OCR processing"""
+    async def amharic_specific_ocr(self, processed_image, image_size):
+        """Amharic-specific OCR processing with enhanced strategies"""
         strategies = [
-            ('amh+amh_vert', get_amharic_config()),
-            ('amh+amh_vert', '--oem 1 --psm 6'),
-            ('amh', '--oem 1 --psm 4'),
-            ('amh+eng', '--oem 1 --psm 6'),  # Fallback to English if needed
+            ('amh', get_optimal_ocr_config('am', image_size)),
+            ('amh', '--oem 1 --psm 4'),  # Single column
+            ('amh', '--oem 1 --psm 6'),  # Uniform block
+            ('amh+eng', '--oem 1 --psm 6'),  # Fallback to English
         ]
         
         best_text = ""
@@ -240,18 +212,19 @@ class OCRProcessor:
         
         return best_text
     
-    async def english_or_auto_ocr(self, processed_image, detected_language):
+    async def english_or_auto_ocr(self, processed_image, detected_language, image_size):
         """OCR for English and other non-Amharic languages"""
         strategies = [
-            ('eng', '--oem 3 --psm 6'),   # English, uniform block
-            ('eng', '--oem 3 --psm 3'),   # English, fully automatic
-            ('osd', '--oem 3 --psm 3'),   # Auto script detection
-            ('eng+osd', '--oem 3 --psm 6'), # English with auto-detection fallback
+            ('eng', get_optimal_ocr_config('en', image_size)),
+            ('eng', '--oem 3 --psm 4'),   # Single column
+            ('eng', '--oem 3 --psm 6'),   # Uniform block
+            ('eng', '--oem 3 --psm 3'),   # Fully automatic
         ]
         
         # Add specific language strategies if detected
-        if detected_language and detected_language != 'eng' and detected_language != 'amh':
-            strategies.insert(0, (f'{detected_language}+eng', '--oem 3 --psm 6'))
+        if detected_language and detected_language != 'en' and detected_language != 'am':
+            tesseract_lang = get_tesseract_code(detected_language)
+            strategies.insert(0, (f'{tesseract_lang}+eng', get_optimal_ocr_config('en', image_size)))
         
         best_text = ""
         for lang, config in strategies:
@@ -268,78 +241,112 @@ class OCRProcessor:
         
         return best_text
     
-    def preservative_preprocessing(self, image_bytes):
-        """Gentle preprocessing that preserves original character shapes"""
+    def enhanced_preprocessing(self, image_bytes):
+        """Enhanced preprocessing that adapts to different scripts"""
         try:
             image = Image.open(io.BytesIO(image_bytes))
+            original_size = image.size
             
-            # Convert to grayscale if needed
+            # Convert to grayscale
             if image.mode != 'L':
                 image = image.convert('L')
             
-            # Very gentle contrast enhancement
+            # Enhance contrast - different levels for different scripts
             enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.5)  # Increased contrast
+            
+            # Enhance sharpness
+            enhancer = ImageEnhance.Sharpness(image)
             image = enhancer.enhance(1.3)
             
-            # Mild sharpness enhancement
-            enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(1.2)
+            # Resize if image is too small (improves OCR for small text)
+            if min(image.size) < 500:
+                scale_factor = 800 / min(image.size)
+                new_size = (int(image.size[0] * scale_factor), int(image.size[1] * scale_factor))
+                image = image.resize(new_size, Image.Resampling.LANCZOS)
             
-            return image
+            return image, original_size
             
         except Exception as e:
             logger.error(f"Preprocessing failed: {e}")
-            return Image.open(io.BytesIO(image_bytes)).convert('L')
+            image = Image.open(io.BytesIO(image_bytes)).convert('L')
+            return image, image.size
     
-    def preservative_clean_text(self, text):
-        """Clean text while preserving original formatting and bullets"""
+    def enhanced_clean_text(self, text, language):
+        """Enhanced text cleaning based on language"""
         if not text:
             return ""
         
+        # Language-specific cleaning
+        if language == 'am':
+            text = clean_amharic_text(text)
+        
+        # General cleaning for all languages
         lines = text.split('\n')
         cleaned_lines = []
         
         for line in lines:
-            original_line = line.rstrip()
-            
-            if original_line:
-                # Fix common OCR artifacts while preserving meaningful characters
-                cleaned_line = self.fix_ocr_artifacts(original_line)
-                cleaned_lines.append(cleaned_line)
-            else:
-                # Preserve empty lines for paragraph separation
-                cleaned_lines.append('')
+            line = line.strip()
+            if line:
+                # Remove lines that are mostly special characters or numbers
+                if self.is_meaningful_line(line, language):
+                    cleaned_line = self.fix_common_artifacts(line)
+                    cleaned_lines.append(cleaned_line)
         
-        # Join back with original line breaks
-        result = '\n'.join(cleaned_lines)
-        return result.strip()
+        # Remove duplicate lines while preserving order
+        unique_lines = []
+        for line in cleaned_lines:
+            if line not in unique_lines:
+                unique_lines.append(line)
+        
+        return '\n'.join(unique_lines)
     
-    def fix_ocr_artifacts(self, line):
-        """Fix common OCR artifacts while preserving original characters"""
+    def is_meaningful_line(self, line, language):
+        """Check if line contains meaningful content"""
+        if len(line.strip()) < 2:
+            return False
+        
+        # Count meaningful characters based on language
+        if language == 'am':
+            meaningful_chars = sum(1 for c in line if is_amharic_character(c) or c.isalpha())
+        else:
+            meaningful_chars = sum(1 for c in line if c.isalpha())
+        
+        total_chars = len(line)
+        
+        if total_chars == 0:
+            return False
+        
+        # At least 30% should be meaningful characters
+        return (meaningful_chars / total_chars) > 0.3
+    
+    def fix_common_artifacts(self, line):
+        """Fix common OCR artifacts"""
         if not line:
             return line
         
-        # Fix bullet artifacts
-        bullet_replacements = {
-            'e ': '• ',
-            'o ': '• ',
-            '0 ': '• ',
-            'c ': '• ',
-            'E ': '• ',
-            'O ': '• ',
-            'C ': '• ',
-            'point ': '• ',
-            '° ': '• ',
-            '· ': '• ',
+        # Fix common character confusions
+        replacements = {
+            '|': 'I',
+            '0': 'O',
+            '1': 'I',
+            '5': 'S',
+            '8': 'B'
         }
         
-        # Check if line starts with a bullet pattern
-        for wrong_bullet, correct_bullet in bullet_replacements.items():
-            if line.startswith(wrong_bullet):
-                line = line.replace(wrong_bullet, correct_bullet, 1)
-                break
+        # Only replace if it makes sense in context
+        words = line.split()
+        cleaned_words = []
         
-        return line
+        for word in words:
+            # Don't replace in likely numbers
+            if not word.isdigit():
+                for wrong, correct in replacements.items():
+                    if wrong in word and len(word) > 1:
+                        word = word.replace(wrong, correct)
+            cleaned_words.append(word)
+        
+        return ' '.join(cleaned_words)
     
     async def extract_with_tesseract(self, image, lang, config):
         """Extract text with Tesseract"""

@@ -55,7 +55,7 @@ TESSERACT_LANGUAGES = {
     'uz': 'uzb', 'vi': 'vie', 'xh': 'xho', 'yi': 'yid', 'yo': 'yor',
     'zh': 'chi_sim', 'zu': 'zul',
     # Enhanced support for African languages
-    'am': 'amh+amh_vert', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
+    'am': 'amh', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
     'ln': 'lin', 'lu': 'lua', 'nd': 'nde', 'om': 'orm', 'rn': 'run',
     'rw': 'kin', 'sg': 'sag', 'sn': 'sna', 'ss': 'ssw', 'ti': 'tir',
     'tn': 'tsn', 'ts': 'tso', 've': 'ven', 'wo': 'wol', 'or': 'ori',
@@ -81,11 +81,11 @@ LANGUAGE_FAMILIES = {
     'en': 'Latin'
 }
 
-# Amharic-specific configuration
+# Enhanced Amharic-specific configuration
 AMHARIC_CONFIG = {
     'psm': '6',  # Uniform block of text
     'oem': '1',  # Neural nets LSTM engine only
-    'config': '-c tessedit_char_whitelist=፩፪፫፬፭፮፯፰፱፲፳፴፵፶፷፸፹፺፻፼።፣፤፥፦፧፨፠፡።፣፤፥፦፧፨ᎀᎁᎂᎃᎄᎅᎆᎇᎈᎉᎊᎋᎌᎍᎎᎏ᎐᎑᎒᎓᎔᎕᎖᎗᎘᎙᎚᎛᎜᎝᎞᎟ᎠᎡᎢᎣᎤᎥᎦᎧᎨᎩᎪᎫᎬᎭᎮᎯᎰᎱᎲᎳᎴᎵᎶᎷᎸᎹᎺᎻᎼᎽᎾᎿᏀᏁᏂᏃᏄᏅᏆᏇᏈᏉᏊᏋᏌᏍᏎᏏᏐᏑᏒᏓᏔᏕᏖᏗᏘᏙᏚᏛᏜᏝᏞᏟᏠᏡᏢᏣᏤᏥᏦᏧᏨᏩᏪᏫᏬᏭᏮᏯᏰᏱᏲᏳᏴᏵabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:-()[]{}'
+    'config': '-c tessedit_do_invert=0 -c textord_min_linesize=0.5 -c textord_old_baselines=0'
 }
 
 def get_supported_languages():
@@ -98,9 +98,6 @@ def get_language_name(code):
 
 def get_tesseract_code(lang_code):
     """Get Tesseract language code with enhanced Amharic support"""
-    if lang_code == 'am':
-        # Try multiple Amharic configurations
-        return 'amh+amh_vert+eng'  # Fallback to English if Amharic fails
     return TESSERACT_LANGUAGES.get(lang_code, 'eng')
 
 def get_language_family(lang_code):
@@ -118,44 +115,43 @@ def get_amharic_config():
 
 def is_amharic_character(char):
     """Check if character is in Amharic Unicode range"""
-    return ('\u1200' <= char <= '\u137F' or 
-            '\u2D80' <= char <= '\u2DDF' or 
-            '\uAB00' <= char <= '\uAB2F')
+    # Correct Amharic Unicode ranges
+    return ('\u1200' <= char <= '\u137F')  # Main Ethiopic block
 
 def get_lang_from_script(script):
     """Map script to language code with enhanced detection"""
     mapping = {
-        'Latin': 'eng',
-        'Cyrillic': 'rus',
-        'Arabic': 'ara',
-        'Devanagari': 'hin',
-        'HanS': 'chi_sim',
-        'Hangul': 'kor',
-        'Japanese': 'jpn',
-        'Tamil': 'tam',
-        'Telugu': 'tel',
-        'Kannada': 'kan',
-        'Malayalam': 'mal',
-        'Gujarati': 'guj',
-        'Gurmukhi': 'pan',
-        'Bengali': 'ben',
-        'Amharic': 'amh',
-        'Ethiopic': 'amh',
-        'Ge\'ez': 'amh',  # Add Ge'ez as another name for Ethiopic script
-        'Hebrew': 'heb',
-        'Armenian': 'hye',
-        'Georgian': 'kat',
-        'Thai': 'tha',
-        'Lao': 'lao',
-        'Khmer': 'khm',
-        'Myanmar': 'mya',
-        'Sinhala': 'sin',
-        'Greek': 'ell',
-        'Oriya': 'ori',
-        'Sindhi': 'snd',
-        'Tibetan': 'bod'
+        'Latin': 'en',
+        'Cyrillic': 'ru',
+        'Arabic': 'ar',
+        'Devanagari': 'hi',
+        'HanS': 'zh',
+        'Hangul': 'ko',
+        'Japanese': 'ja',
+        'Tamil': 'ta',
+        'Telugu': 'te',
+        'Kannada': 'kn',
+        'Malayalam': 'ml',
+        'Gujarati': 'gu',
+        'Gurmukhi': 'pa',
+        'Bengali': 'bn',
+        'Amharic': 'am',
+        'Ethiopic': 'am',
+        'Ge\'ez': 'am',
+        'Hebrew': 'he',
+        'Armenian': 'hy',
+        'Georgian': 'ka',
+        'Thai': 'th',
+        'Lao': 'lo',
+        'Khmer': 'km',
+        'Myanmar': 'my',
+        'Sinhala': 'si',
+        'Greek': 'el',
+        'Oriya': 'or',
+        'Sindhi': 'sd',
+        'Tibetan': 'bo'
     }
-    return mapping.get(script, 'eng')  # Default to English for unknown scripts
+    return mapping.get(script, 'en')
 
 def detect_primary_language(text):
     """Detect the primary language of text"""
@@ -178,21 +174,31 @@ def detect_primary_language(text):
     
     # Determine primary language
     if amharic_ratio > 0.3:
-        return 'amh'
+        return 'am'
     elif english_ratio > 0.7:
-        return 'eng'
+        return 'en'
     else:
         return 'mixed'
 
-def get_optimal_ocr_config(language):
-    """Get optimal OCR configuration for specific language"""
-    configs = {
-        'amh': '--oem 1 --psm 6 -c preserve_interword_spaces=1',
-        'eng': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
+def get_optimal_ocr_config(language, image_size=None):
+    """Get optimal OCR configuration for specific language and image size"""
+    base_configs = {
+        'am': '--oem 1 --psm 6 -c preserve_interword_spaces=1 -c textord_min_linesize=0.5',
+        'en': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
         'mixed': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
         'unknown': '--oem 3 --psm 6 -c preserve_interword_spaces=1'
     }
-    return configs.get(language, configs['unknown'])
+    
+    config = base_configs.get(language, base_configs['unknown'])
+    
+    # Adjust PSM based on image size for better layout handling
+    if image_size and image_size[0] * image_size[1] > 1000000:  # Large image
+        if language == 'am':
+            config = config.replace('--psm 6', '--psm 4')  # Single column for large Amharic
+        else:
+            config = config.replace('--psm 6', '--psm 4')  # Single column for large text
+    
+    return config
 
 def validate_amharic_text(text):
     """Validate if text contains meaningful Amharic content"""
@@ -226,8 +232,8 @@ def validate_english_text(text):
 
 # Language detection confidence thresholds
 CONFIDENCE_THRESHOLDS = {
-    'amh': 0.3,  # 30% Amharic characters
-    'eng': 0.6,  # 60% English characters
+    'am': 0.3,  # 30% Amharic characters
+    'en': 0.6,  # 60% English characters
     'mixed': 0.1  # 10% mixed content
 }
 
@@ -240,11 +246,30 @@ def get_language_confidence(text, language):
     if total_chars == 0:
         return 0.0
     
-    if language == 'amh':
+    if language == 'am':
         amharic_chars = sum(1 for c in text if is_amharic_character(c))
         return amharic_chars / total_chars
-    elif language == 'eng':
+    elif language == 'en':
         english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
         return english_chars / total_chars
     else:
         return 0.5  # Default confidence for mixed/unknown
+
+def clean_amharic_text(text):
+    """Clean and normalize Amharic text"""
+    if not text:
+        return ""
+    
+    # Remove common OCR artifacts while preserving Amharic characters
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        # Remove lines that are mostly non-Amharic characters
+        amharic_chars = sum(1 for c in line if is_amharic_character(c))
+        total_chars = len(line.strip())
+        
+        if total_chars > 0 and (amharic_chars / total_chars) > 0.1:
+            cleaned_lines.append(line.strip())
+    
+    return '\n'.join(cleaned_lines)
