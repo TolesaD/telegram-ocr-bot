@@ -77,8 +77,8 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text("❌ Image is too large. Please send an image smaller than 20MB.")
             return
         
-        # Update status with language detection info
-        await processing_msg.edit_text(f"🔍 Analyzing image content...\n⚡ Detecting text language")
+        # Update status
+        await processing_msg.edit_text(f"🔍 Processing image...\n⚡ Using advanced preprocessing")
         
         # Extract text with enhanced timeout
         try:
@@ -104,16 +104,14 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
-        # Enhanced text validation
-        if not extracted_text or len(extracted_text.strip()) < 5:
+        if not extracted_text or "No readable text" in extracted_text or "Very little text" in extracted_text:
             await processing_msg.edit_text(
-                f"❌ No readable text found or text too short.\n\n"
+                f"❌ {extracted_text if extracted_text else 'No readable text found'}\n\n"
                 "🎯 *For Better Results:*\n"
                 "• Use high-contrast images\n"
                 "• Ensure text is horizontal\n"
                 "• Good, even lighting\n"
-                "• Clear, focused text\n"
-                "• Avoid blurry or distorted images",
+                "• Clear, focused text",
                 parse_mode='Markdown'
             )
             return
@@ -139,21 +137,17 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error logging OCR request: {e}")
         
         # Enhanced response with performance info
-        text_preview = extracted_text[:100] + "..." if len(extracted_text) > 100 else extracted_text
-        
         if text_format == 'html':
             response_text = (
                 f"📝 **Extracted Text** (HTML Format - Copy Friendly)\n"
-                f"⏱️ Processed in: {processing_time:.2f}s\n"
-                f"📊 Characters: {len(extracted_text)}\n\n"
+                f"⏱️ Processed in: {processing_time:.2f}s\n\n"
                 f"{formatted_text}"
             )
             parse_mode = 'HTML'
         else:
             response_text = (
                 f"📝 **Extracted Text** (Plain Format)\n"
-                f"⏱️ Processed in: {processing_time:.2f}s\n"
-                f"📊 Characters: {len(extracted_text)}\n\n"
+                f"⏱️ Processed in: {processing_time:.2f}s\n\n"
                 f"{formatted_text}"
             )
             parse_mode = None
@@ -206,16 +200,16 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Check image size"
         )
         if processing_msg:
-            await processing_msg.edit_text(error_msg, parse_mode='Markdown')
+            await processing_msg.edit_text(error_msg)
         else:
-            await message.reply_text(error_msg, parse_mode='Markdown')
+            await message.reply_text(error_msg)
             
     except Exception as e:
         error_msg = await handle_ocr_error(e)
         if processing_msg:
-            await processing_msg.edit_text(error_msg, parse_mode='Markdown')
+            await processing_msg.edit_text(error_msg)
         else:
-            await message.reply_text(error_msg, parse_mode='Markdown')
+            await message.reply_text(error_msg)
         
         # Log error
         try:
@@ -248,27 +242,19 @@ async def handle_ocr_error(error):
             "• High contrast improves speed\n"
             "• Clear, focused images"
         )
-    elif "no readable text" in error_str.lower() or "very little text" in error_str.lower():
+    elif "no readable text" in error_str.lower():
         return (
             f"🔍 No readable text found.\n\n"
             "🎯 *Quality Tips:*\n"
             "• Ensure text is clear and focused\n"
             "• Good lighting reduces errors\n"
             "• High contrast backgrounds\n"
-            "• Straight, horizontal text\n"
-            "• Avoid blurry or distorted images"
+            "• Straight, horizontal text"
         )
     elif "language" in error_str.lower() and "not installed" in error_str.lower():
         return f"❌ Language pack not available. Please try English or another supported language."
     else:
-        return (
-            f"❌ Error processing image.\n\n"
-            "💡 *Try This:*\n"
-            "• Send a different image\n"
-            "• Check image quality\n"
-            "• Ensure text is readable\n"
-            "• Try cropping the image"
-        )
+        return f"❌ Error processing image. Please try a different image."
 
 async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Enhanced reformatting with better error handling"""
@@ -310,10 +296,10 @@ async def handle_reformat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode = None
         
         # Enhanced keyboard
-        other_format = 'html' if format_type == 'plain' else 'plain'
         keyboard = [
             [
-                InlineKeyboardButton(f"📄 {other_format.upper()}", callback_data=f"reformat_{other_format}_{original_message_id}"),
+                InlineKeyboardButton("📄 Plain Text", callback_data=f"reformat_plain_{original_message_id}"),
+                InlineKeyboardButton("📋 Copy HTML", callback_data=f"reformat_html_{original_message_id}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)

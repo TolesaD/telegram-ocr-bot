@@ -1,23 +1,30 @@
 FROM python:3.9-slim
 
-# Install system dependencies - optimized for all languages
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-all \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+     # Install system dependencies
+     RUN apt-get update && apt-get install -y \
+         tesseract-ocr \
+         tesseract-ocr-all \
+         libtesseract-dev \
+         libleptonica-dev \
+         pkg-config \
+         && apt-get clean \
+         && rm -rf /var/lib/apt/lists/*
 
-# Verify Tesseract installation
-RUN tesseract --version && tesseract --list-langs | head -20
+     # Set working directory
+     WORKDIR /app
 
-WORKDIR /app
+     # Copy requirements
+     COPY requirements.txt .
 
-COPY requirements.txt .
+     # Install Python dependencies
+     RUN pip install --no-cache-dir -r requirements.txt
 
-RUN pip install --no-cache-dir -r requirements.txt
+     # Copy application code
+     COPY . .
 
-COPY . .
+     # Set environment variables
+     ENV PYTHONUNBUFFERED=1
+     ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
-ENV PYTHONUNBUFFERED=1
-
-CMD ["python", "app.py"]
+     # Run the application
+     CMD ["python", "app.py"]
