@@ -1,275 +1,189 @@
 # ocr_engine/language_support.py
-# Enhanced language support with 100+ languages and improved Amharic handling
+# Optimized language support with better detection and configurations
 
 LANGUAGE_MAPPING = {
-    'af': 'Afrikaans', 'ar': 'Arabic', 'az': 'Azerbaijani', 'be': 'Belarusian',
-    'bg': 'Bulgarian', 'bn': 'Bengali', 'bs': 'Bosnian', 'ca': 'Catalan',
-    'ceb': 'Cebuano', 'cs': 'Czech', 'cy': 'Welsh', 'da': 'Danish',
-    'de': 'German', 'el': 'Greek', 'en': 'English', 'eo': 'Esperanto',
-    'es': 'Spanish', 'et': 'Estonian', 'eu': 'Basque', 'fa': 'Persian',
-    'fi': 'Finnish', 'fr': 'French', 'ga': 'Irish', 'gl': 'Galician',
-    'gu': 'Gujarati', 'ha': 'Hausa', 'hi': 'Hindi', 'hr': 'Croatian',
-    'ht': 'Haitian', 'hu': 'Hungarian', 'hy': 'Armenian', 'id': 'Indonesian',
-    'ig': 'Igbo', 'is': 'Icelandic', 'it': 'Italian', 'iw': 'Hebrew',
-    'ja': 'Japanese', 'jw': 'Javanese', 'ka': 'Georgian', 'kk': 'Kazakh',
-    'km': 'Khmer', 'kn': 'Kannada', 'ko': 'Korean', 'la': 'Latin',
-    'lo': 'Lao', 'lt': 'Lithuanian', 'lv': 'Latvian', 'mg': 'Malagasy',
-    'mi': 'Maori', 'mk': 'Macedonian', 'ml': 'Malayalam', 'mn': 'Mongolian',
-    'mr': 'Marathi', 'ms': 'Malay', 'mt': 'Maltese', 'my': 'Myanmar',
-    'ne': 'Nepali', 'nl': 'Dutch', 'no': 'Norwegian', 'ny': 'Chichewa',
-    'pa': 'Punjabi', 'pl': 'Polish', 'pt': 'Portuguese', 'ro': 'Romanian',
-    'ru': 'Russian', 'si': 'Sinhala', 'sk': 'Slovak', 'sl': 'Slovenian',
-    'so': 'Somali', 'sq': 'Albanian', 'sr': 'Serbian', 'st': 'Sesotho',
-    'su': 'Sundanese', 'sv': 'Swedish', 'sw': 'Swahili', 'ta': 'Tamil',
-    'te': 'Telugu', 'tg': 'Tajik', 'th': 'Thai', 'tl': 'Filipino',
-    'tr': 'Turkish', 'uk': 'Ukrainian', 'ur': 'Urdu', 'uz': 'Uzbek',
-    'vi': 'Vietnamese', 'xh': 'Xhosa', 'yi': 'Yiddish', 'yo': 'Yoruba',
-    'zh': 'Chinese', 'zu': 'Zulu',
-    # Added more for African and Indian
-    'am': 'Amharic', 'bm': 'Bambara', 'ff': 'Fula', 'lg': 'Luganda',
-    'ln': 'Lingala', 'lu': 'Luba-Katanga', 'nd': 'North Ndebele',
-    'om': 'Oromo', 'rn': 'Kirundi', 'rw': 'Kinyarwanda', 'sg': 'Sango',
-    'sn': 'Shona', 'ss': 'Swati', 'ti': 'Tigrinya', 'tn': 'Tswana',
-    'ts': 'Tsonga', 've': 'Venda', 'wo': 'Wolof',
-    'as': 'Assamese', 'bh': 'Bihari', 'or': 'Oriya', 'sd': 'Sindhi'
+    'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German', 
+    'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian', 'zh': 'Chinese',
+    'ja': 'Japanese', 'ko': 'Korean', 'ar': 'Arabic', 'hi': 'Hindi',
+    'bn': 'Bengali', 'pa': 'Punjabi', 'gu': 'Gujarati', 'or': 'Odia',
+    'ta': 'Tamil', 'te': 'Telugu', 'kn': 'Kannada', 'ml': 'Malayalam',
+    'th': 'Thai', 'vi': 'Vietnamese', 'tr': 'Turkish', 'pl': 'Polish',
+    'uk': 'Ukrainian', 'ro': 'Romanian', 'nl': 'Dutch', 'hu': 'Hungarian',
+    'sv': 'Swedish', 'cs': 'Czech', 'el': 'Greek', 'he': 'Hebrew',
+    'fa': 'Persian', 'ur': 'Urdu', 'am': 'Amharic', 'ti': 'Tigrinya',
+    'so': 'Somali', 'sw': 'Swahili', 'yo': 'Yoruba', 'ig': 'Igbo',
+    'ha': 'Hausa', 'af': 'Afrikaans', 'zu': 'Zulu', 'xh': 'Xhosa'
 }
 
-# Tesseract language codes (expanded for all)
+# Core languages with reliable Tesseract support
+CORE_LANGUAGES = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'zh', 'ja', 'ko', 'ar', 'hi', 'am']
+
 TESSERACT_LANGUAGES = {
-    'af': 'afr', 'ar': 'ara', 'az': 'aze', 'be': 'bel', 'bg': 'bul',
-    'bn': 'ben', 'bs': 'bos', 'ca': 'cat', 'ceb': 'ceb', 'cs': 'ces',
-    'cy': 'cym', 'da': 'dan', 'de': 'deu', 'el': 'ell', 'en': 'eng',
-    'eo': 'epo', 'es': 'spa', 'et': 'est', 'eu': 'eus', 'fa': 'fas',
-    'fi': 'fin', 'fr': 'fra', 'ga': 'gle', 'gl': 'glg', 'gu': 'guj',
-    'he': 'heb', 'hi': 'hin', 'hr': 'hrv', 'hu': 'hun', 'hy': 'hye',
-    'id': 'ind', 'is': 'isl', 'it': 'ita', 'ja': 'jpn', 'jw': 'jav',
-    'ka': 'kat', 'kk': 'kaz', 'km': 'khm', 'kn': 'kan', 'ko': 'kor',
-    'la': 'lat', 'lo': 'lao', 'lt': 'lit', 'lv': 'lav', 'mg': 'mlg',
-    'mi': 'mri', 'mk': 'mkd', 'ml': 'mal', 'mn': 'mon', 'mr': 'mar',
-    'ms': 'msa', 'mt': 'mlt', 'my': 'mya', 'ne': 'nep', 'nl': 'nld',
-    'no': 'nor', 'ny': 'nya', 'pa': 'pan', 'pl': 'pol', 'pt': 'por',
-    'ro': 'ron', 'ru': 'rus', 'si': 'sin', 'sk': 'slk', 'sl': 'slv',
-    'so': 'som', 'sq': 'sqi', 'sr': 'srp', 'st': 'sot', 'su': 'sun',
-    'sv': 'swe', 'sw': 'swa', 'ta': 'tam', 'te': 'tel', 'tg': 'tgk',
-    'th': 'tha', 'tl': 'tgl', 'tr': 'tur', 'uk': 'ukr', 'ur': 'urd',
-    'uz': 'uzb', 'vi': 'vie', 'xh': 'xho', 'yi': 'yid', 'yo': 'yor',
-    'zh': 'chi_sim', 'zu': 'zul',
-    # Enhanced support for African languages
-    'am': 'amh', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
-    'ln': 'lin', 'lu': 'lua', 'nd': 'nde', 'om': 'orm', 'rn': 'run',
-    'rw': 'kin', 'sg': 'sag', 'sn': 'sna', 'ss': 'ssw', 'ti': 'tir',
-    'tn': 'tsn', 'ts': 'tso', 've': 'ven', 'wo': 'wol', 'or': 'ori',
-    'sd': 'snd'
+    'en': 'eng', 'es': 'spa', 'fr': 'fra', 'de': 'deu', 'it': 'ita',
+    'pt': 'por', 'ru': 'rus', 'zh': 'chi_sim', 'ja': 'jpn', 'ko': 'kor',
+    'ar': 'ara', 'hi': 'hin', 'bn': 'ben', 'pa': 'pan', 'gu': 'guj',
+    'or': 'ori', 'ta': 'tam', 'te': 'tel', 'kn': 'kan', 'ml': 'mal',
+    'th': 'tha', 'vi': 'vie', 'tr': 'tur', 'pl': 'pol', 'uk': 'ukr',
+    'ro': 'ron', 'nl': 'nld', 'hu': 'hun', 'sv': 'swe', 'cs': 'ces',
+    'el': 'ell', 'he': 'heb', 'fa': 'fas', 'ur': 'urd', 'am': 'amh',
+    'ti': 'tir', 'so': 'som', 'sw': 'swa', 'yo': 'yor', 'ig': 'ibo',
+    'ha': 'hau', 'af': 'afr', 'zu': 'zul', 'xh': 'xho'
 }
 
-# Language families for better script detection
-LANGUAGE_FAMILIES = {
-    'am': 'Ethiopic',
-    'ar': 'Arabic',
-    'he': 'Hebrew',
-    'ru': 'Cyrillic',
-    'el': 'Greek',
-    'th': 'Thai',
-    'zh': 'Chinese',
-    'ja': 'Japanese',
-    'ko': 'Korean',
-    'hi': 'Devanagari',
-    'ta': 'Tamil',
-    'te': 'Telugu',
-    'kn': 'Kannada',
-    'ml': 'Malayalam',
-    'en': 'Latin'
+# Script families for better processing
+SCRIPT_FAMILIES = {
+    'Latin': ['en', 'es', 'fr', 'de', 'it', 'pt', 'pl', 'nl', 'sv', 'tr', 'vi', 'ro'],
+    'Cyrillic': ['ru', 'uk', 'bg', 'sr'],
+    'Arabic': ['ar', 'fa', 'ur'],
+    'Devanagari': ['hi', 'ne', 'mr'],
+    'Bengali': ['bn'],
+    'Chinese': ['zh'],
+    'Japanese': ['ja'],
+    'Korean': ['ko'],
+    'Ethiopic': ['am', 'ti'],
+    'Thai': ['th'],
+    'Hebrew': ['he'],
+    'Greek': ['el'],
+    'Tamil': ['ta'],
+    'Telugu': ['te'],
+    'Kannada': ['kn'],
+    'Malayalam': ['ml']
 }
 
-# Enhanced Amharic-specific configuration
-AMHARIC_CONFIG = {
-    'psm': '6',  # Uniform block of text
-    'oem': '1',  # Neural nets LSTM engine only
-    'config': '-c tessedit_do_invert=0 -c textord_min_linesize=0.5 -c textord_old_baselines=0'
-}
-
-def get_supported_languages():
-    """Return list of supported languages"""
-    return list(LANGUAGE_MAPPING.keys())
-
-def get_language_name(code):
-    """Get language name from code"""
-    return LANGUAGE_MAPPING.get(code, 'Unknown')
+def get_script_family(lang_code):
+    """Get script family for language"""
+    for script, languages in SCRIPT_FAMILIES.items():
+        if lang_code in languages:
+            return script
+    return 'Latin'  # Default
 
 def get_tesseract_code(lang_code):
-    """Get Tesseract language code with enhanced Amharic support"""
+    """Get Tesseract language code with fallback"""
     return TESSERACT_LANGUAGES.get(lang_code, 'eng')
 
-def get_language_family(lang_code):
-    """Get language family for script-specific processing"""
-    return LANGUAGE_FAMILIES.get(lang_code, 'Latin')
-
-def is_complex_script(lang_code):
-    """Check if language uses complex script requiring special processing"""
-    complex_scripts = ['am', 'ar', 'he', 'th', 'zh', 'ja', 'ko', 'hi']
-    return lang_code in complex_scripts
-
-def get_amharic_config():
-    """Get Amharic-specific Tesseract configuration"""
-    return f'--oem {AMHARIC_CONFIG["oem"]} --psm {AMHARIC_CONFIG["psm"]} {AMHARIC_CONFIG["config"]}'
-
-def is_amharic_character(char):
-    """Check if character is in Amharic Unicode range"""
-    # Correct Amharic Unicode ranges
-    return ('\u1200' <= char <= '\u137F')  # Main Ethiopic block
-
-def get_lang_from_script(script):
-    """Map script to language code with enhanced detection"""
-    mapping = {
-        'Latin': 'en',
-        'Cyrillic': 'ru',
-        'Arabic': 'ar',
-        'Devanagari': 'hi',
-        'HanS': 'zh',
-        'Hangul': 'ko',
-        'Japanese': 'ja',
-        'Tamil': 'ta',
-        'Telugu': 'te',
-        'Kannada': 'kn',
-        'Malayalam': 'ml',
-        'Gujarati': 'gu',
-        'Gurmukhi': 'pa',
-        'Bengali': 'bn',
-        'Amharic': 'am',
-        'Ethiopic': 'am',
-        'Ge\'ez': 'am',
-        'Hebrew': 'he',
-        'Armenian': 'hy',
-        'Georgian': 'ka',
-        'Thai': 'th',
-        'Lao': 'lo',
-        'Khmer': 'km',
-        'Myanmar': 'my',
-        'Sinhala': 'si',
-        'Greek': 'el',
-        'Oriya': 'or',
-        'Sindhi': 'sd',
-        'Tibetan': 'bo'
-    }
-    return mapping.get(script, 'en')
-
-def detect_primary_language(text):
-    """Detect the primary language of text"""
-    if not text or len(text.strip()) < 3:
-        return 'unknown'
+def get_ocr_config(language, script_family, image_size=None):
+    """Get optimized OCR configuration for language and script"""
+    base_config = "--oem 3 --dpi 300 -c tessedit_do_invert=0"
     
-    # Count Amharic characters
-    amharic_chars = sum(1 for c in text if is_amharic_character(c))
-    
-    # Count English letters
-    english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-    
-    total_chars = len(text)
-    
-    if total_chars == 0:
-        return 'unknown'
-    
-    amharic_ratio = amharic_chars / total_chars
-    english_ratio = english_chars / total_chars
-    
-    # Determine primary language
-    if amharic_ratio > 0.3:
-        return 'am'
-    elif english_ratio > 0.7:
-        return 'en'
-    else:
-        return 'mixed'
-
-def get_optimal_ocr_config(language, image_size=None):
-    """Get optimal OCR configuration for specific language and image size"""
-    base_configs = {
-        'am': '--oem 1 --psm 6 -c preserve_interword_spaces=1 -c textord_min_linesize=0.5',
-        'en': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
-        'mixed': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
-        'unknown': '--oem 3 --psm 6 -c preserve_interword_spaces=1'
+    # Script-specific configurations
+    script_configs = {
+        'Latin': "--psm 6 -c preserve_interword_spaces=1",
+        'Cyrillic': "--psm 6 -c textord_min_linesize=1.5",
+        'Arabic': "--psm 6 -c textord_min_linesize=2.0 -c textord_old_baselines=1",
+        'Chinese': "--psm 6 -c textord_min_linesize=2.5 -c textord_old_baselines=1",
+        'Japanese': "--psm 6 -c textord_min_linesize=2.5",
+        'Korean': "--psm 6 -c textord_min_linesize=2.0",
+        'Ethiopic': "--psm 6 -c textord_min_linesize=1.8 -c textord_old_baselines=1",
+        'Thai': "--psm 6 -c textord_min_linesize=2.0",
+        'Devanagari': "--psm 6 -c textord_min_linesize=2.0"
     }
     
-    config = base_configs.get(language, base_configs['unknown'])
+    config = f"{base_config} {script_configs.get(script_family, '--psm 6')}"
     
-    # Adjust PSM based on image size for better layout handling
-    if image_size and image_size[0] * image_size[1] > 1000000:  # Large image
-        if language == 'am':
-            config = config.replace('--psm 6', '--psm 4')  # Single column for large Amharic
-        else:
-            config = config.replace('--psm 6', '--psm 4')  # Single column for large text
+    # Adjust for image size
+    if image_size and image_size[0] * image_size[1] > 2000000:  # Large images
+        config = config.replace("--psm 6", "--psm 4")
+    elif image_size and image_size[0] * image_size[1] < 100000:  # Small images
+        config = config.replace("--psm 6", "--psm 8")
     
     return config
 
-def validate_amharic_text(text):
-    """Validate if text contains meaningful Amharic content"""
+def detect_script_from_text(text):
+    """Detect script from text content with improved accuracy"""
     if not text:
-        return False
+        return 'Latin'
     
-    # Count Amharic characters
-    amharic_chars = sum(1 for c in text if is_amharic_character(c))
-    total_chars = len(text.strip())
+    # Count characters by script ranges
+    script_counts = {
+        'Latin': sum(1 for c in text if c.isascii() and c.isalpha()),
+        'Cyrillic': sum(1 for c in text if '\u0400' <= c <= '\u04FF'),
+        'Arabic': sum(1 for c in text if '\u0600' <= c <= '\u06FF'),
+        'Devanagari': sum(1 for c in text if '\u0900' <= c <= '\u097F'),
+        'Chinese': sum(1 for c in text if '\u4E00' <= c <= '\u9FFF'),
+        'Japanese': sum(1 for c in text if ('\u3040' <= c <= '\u309F' or '\u30A0' <= c <= '\u30FF')),
+        'Korean': sum(1 for c in text if '\uAC00' <= c <= '\uD7A3'),
+        'Ethiopic': sum(1 for c in text if '\u1200' <= c <= '\u137F'),
+        'Thai': sum(1 for c in text if '\u0E00' <= c <= '\u0E7F'),
+        'Hebrew': sum(1 for c in text if '\u0590' <= c <= '\u05FF')
+    }
     
-    if total_chars < 5:
-        return False
-    
-    # At least 20% should be Amharic characters to be considered valid Amharic
-    return (amharic_chars / total_chars) > 0.2
+    # Return script with highest count
+    return max(script_counts.items(), key=lambda x: x[1])[0]
 
-def validate_english_text(text):
-    """Validate if text contains meaningful English content"""
-    if not text:
-        return False
-    
-    # Count English letters and common punctuation
-    english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-    total_chars = len(text.strip())
-    
-    if total_chars < 5:
-        return False
-    
-    # At least 60% should be English letters to be considered valid English
-    return (english_chars / total_chars) > 0.6
+def is_amharic_character(char):
+    """Check if character is Amharic/Ethiopic"""
+    return '\u1200' <= char <= '\u137F'
 
-# Language detection confidence thresholds
-CONFIDENCE_THRESHOLDS = {
-    'am': 0.3,  # 30% Amharic characters
-    'en': 0.6,  # 60% English characters
-    'mixed': 0.1  # 10% mixed content
-}
-
-def get_language_confidence(text, language):
-    """Calculate confidence level for detected language"""
-    if not text:
-        return 0.0
+def validate_ocr_result(text, expected_language):
+    """Validate OCR result quality"""
+    if not text or len(text.strip()) < 3:
+        return False, "Text too short"
     
-    total_chars = len(text.strip())
-    if total_chars == 0:
-        return 0.0
+    # Check character diversity
+    unique_chars = len(set(text))
+    if unique_chars < 2:
+        return False, "Low character diversity"
     
-    if language == 'am':
+    # Language-specific validation
+    if expected_language == 'am':
         amharic_chars = sum(1 for c in text if is_amharic_character(c))
-        return amharic_chars / total_chars
-    elif language == 'en':
-        english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-        return english_chars / total_chars
-    else:
-        return 0.5  # Default confidence for mixed/unknown
+        if amharic_chars < 2:
+            return False, "No Amharic characters detected"
+    
+    return True, "Valid"
 
-def clean_amharic_text(text):
-    """Clean and normalize Amharic text"""
+def get_fallback_languages(primary_lang):
+    """Get fallback languages for OCR"""
+    script_family = get_script_family(primary_lang)
+    fallbacks = {
+        'Latin': ['eng', 'spa', 'fra'],
+        'Cyrillic': ['rus', 'ukr'],
+        'Arabic': ['ara', 'fas'],
+        'Chinese': ['chi_sim', 'chi_tra'],
+        'Japanese': ['jpn'],
+        'Korean': ['kor'],
+        'Ethiopic': ['amh'],
+        'Devanagari': ['hin', 'nep']
+    }
+    return fallbacks.get(script_family, ['eng'])
+
+def clean_ocr_text(text, language):
+    """Clean OCR text based on language"""
     if not text:
         return ""
     
-    # Remove common OCR artifacts while preserving Amharic characters
     lines = text.split('\n')
     cleaned_lines = []
     
     for line in lines:
-        # Remove lines that are mostly non-Amharic characters
-        amharic_chars = sum(1 for c in line if is_amharic_character(c))
-        total_chars = len(line.strip())
-        
-        if total_chars > 0 and (amharic_chars / total_chars) > 0.1:
-            cleaned_lines.append(line.strip())
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Remove lines that are mostly garbage
+        if is_garbage_line(line, language):
+            continue
+            
+        cleaned_lines.append(line)
     
-    return '\n'.join(cleaned_lines)
+    # Remove duplicate consecutive lines
+    unique_lines = []
+    for i, line in enumerate(cleaned_lines):
+        if i == 0 or line != cleaned_lines[i-1]:
+            unique_lines.append(line)
+    
+    return '\n'.join(unique_lines)
+
+def is_garbage_line(line, language):
+    """Check if line is likely garbage"""
+    if len(line) < 2:
+        return True
+    
+    # Count meaningful characters
+    if language == 'am':
+        meaningful_chars = sum(1 for c in line if is_amharic_character(c) or c.isalnum())
+    else:
+        meaningful_chars = sum(1 for c in line if c.isalnum())
+    
+    # If less than 40% meaningful, consider garbage
+    return (meaningful_chars / len(line)) < 0.4
