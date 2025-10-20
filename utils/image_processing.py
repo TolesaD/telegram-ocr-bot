@@ -15,6 +15,8 @@ thread_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ocr_")
 class OCRProcessor:
     def __init__(self):
         self.setup_tesseract()
+        self.available_languages = []
+        self._load_available_languages()
     
     def setup_tesseract(self):
         """Setup Tesseract with enhanced configuration"""
@@ -25,6 +27,73 @@ class OCRProcessor:
         except Exception as e:
             logger.error(f"Tesseract initialization failed: {e}")
             return False
+    
+    def _load_available_languages(self):
+        """Load available Tesseract languages"""
+        try:
+            # Method 1: Use pytesseract's built-in method
+            try:
+                self.available_languages = pytesseract.get_languages()
+                logger.info(f"📚 Found {len(self.available_languages)} available languages: {self.available_languages}")
+            except Exception as e:
+                logger.warning(f"Could not get languages via pytesseract: {e}")
+                # Method 2: Test common languages
+                self._test_common_languages()
+            
+        except Exception as e:
+            logger.error(f"Error loading available languages: {e}")
+            self.available_languages = ['eng']  # Always fallback to English
+    
+    def _test_common_languages(self):
+        """Test common languages to see what's available"""
+        common_langs = ['eng', 'amh', 'ara', 'chi_sim', 'jpn', 'kor', 'spa', 'fra', 'deu', 'rus']
+        available = []
+        
+        # Create a simple test image
+        test_image = Image.new('RGB', (100, 30), color='white')
+        
+        for lang in common_langs:
+            try:
+                # Quick test to see if language is available
+                pytesseract.image_to_string(test_image, lang=lang, config='--psm 8 -c min_characters_to_try=1')
+                available.append(lang)
+                logger.info(f"✅ Language {lang} is available")
+            except Exception as e:
+                logger.info(f"❌ Language {lang} is not available: {e}")
+                continue
+        
+        self.available_languages = available if available else ['eng']
+        logger.info(f"🎯 Using available languages: {self.available_languages}")
+    
+    def is_language_available(self, lang_code):
+        """Check if a language is available"""
+        tesseract_code = self._get_tesseract_code_from_lang(lang_code)
+        return tesseract_code in self.available_languages
+    
+    def _get_tesseract_code_from_lang(self, lang_code):
+        """Convert our language code to Tesseract code"""
+        mapping = {
+            'en': 'eng', 'eng': 'eng', 'english': 'eng',
+            'am': 'amh', 'amh': 'amh', 'amharic': 'amh',
+            'ar': 'ara', 'ara': 'ara', 'arabic': 'ara',
+            'zh': 'chi_sim', 'chi_sim': 'chi_sim', 'chinese': 'chi_sim',
+            'ja': 'jpn', 'jpn': 'jpn', 'japanese': 'jpn',
+            'ko': 'kor', 'kor': 'kor', 'korean': 'kor',
+            'es': 'spa', 'spa': 'spa', 'spanish': 'spa',
+            'fr': 'fra', 'fra': 'fra', 'french': 'fra',
+            'de': 'deu', 'deu': 'deu', 'german': 'deu',
+            'ru': 'rus', 'rus': 'rus', 'russian': 'rus'
+        }
+        return mapping.get(lang_code, 'eng')  # Default to English
+    
+    def _get_lang_from_tesseract_code(self, tess_code):
+        """Convert Tesseract code to our language code"""
+        mapping = {
+            'eng': 'en', 'amh': 'am', 'ara': 'ar', 'chi_sim': 'zh',
+            'jpn': 'ja', 'kor': 'ko', 'spa': 'es', 'fra': 'fr',
+            'deu': 'de', 'rus': 'ru', 'por': 'pt', 'ita': 'it'
+        }
+        return mapping.get(tess_code, 'en')
     
     async def extract_text_optimized(self, image_bytes, language=None):
         """Enhanced text extraction with smart language detection"""
@@ -43,7 +112,7 @@ class OCRProcessor:
             logger.info(f"🔍 Detected language: {detected_language}")
             
             # Extract text based on detected language
-            if detected_language == 'amh':
+            if detected_language == 'am':
                 text = await self.amharic_specific_ocr(processed_image, image_bytes)
             else:
                 text = await self.english_or_auto_ocr(processed_image, detected_language)
@@ -64,56 +133,137 @@ class OCRProcessor:
             return f"❌ Processing error: {str(e)}"
     
     async def detect_language_smart(self, processed_image):
-        """Enhanced language detection with better script support"""
+        """Enhanced language detection that only uses available languages"""
         loop = asyncio.get_event_loop()
         
         try:
-            # First try OSD for script detection
-            osd_result = await loop.run_in_executor(
-                thread_pool,
-                self._get_osd_data,
-                processed_image
-            )
+            logger.info(f"📚 Available languages for detection: {self.available_languages}")
             
-            # Extract script from OSD
-            script = self._extract_script_from_osd(osd_result)
-            logger.info(f"📜 OSD detected script: {script}")
+            # Priority languages that are actually available
+            priority_langs = []
+            for lang in ['en', 'am', 'ar', 'zh', 'ja', 'ko']:
+                if self.is_language_available(lang):
+                    priority_langs.append(lang)
             
-            # Try quick extraction with multiple languages to verify
+            # If no priority languages available, use whatever is available
+            if not priority_langs:
+                for tess_code in self.available_languages:
+                    lang_code = self._get_lang_from_tesseract_code(tess_code)
+                    if lang_code and lang_code not in priority_langs:
+                        priority_langs.append(lang_code)
+            
+            logger.info(f"🎯 Testing languages: {priority_langs}")
+            
+            # Try quick extraction with available languages
             test_texts = {}
-            test_languages = ['eng', 'amh', 'ara', 'chi_sim', 'jpn', 'kor']
-            
-            for lang in test_languages:
+            for lang in priority_langs:
                 try:
-                    text = await self.extract_with_tesseract(processed_image, lang, '--psm 6 --oem 1')
-                    if text:
+                    tesseract_code = self._get_tesseract_code_from_lang(lang)
+                    text = await self.extract_with_tesseract(processed_image, tesseract_code, '--psm 6 --oem 1')
+                    if text and text.strip():
                         test_texts[lang] = text
-                except:
+                        logger.info(f"✅ {lang} test successful: {len(text)} chars")
+                except Exception as e:
+                    logger.warning(f"❌ {lang} test failed: {e}")
                     continue
             
             # Analyze which language produced the best results
-            best_lang = 'eng'
+            best_lang = 'en'  # Default to English
             best_confidence = 0
             
             for lang, text in test_texts.items():
-                script = self._detect_script_from_text(text)
-                expected_lang = self._get_language_from_script(script)
-                
-                # Convert Tesseract code to our language code
-                lang_map = {'eng': 'en', 'amh': 'am', 'ara': 'ar', 'chi_sim': 'zh', 'jpn': 'ja', 'kor': 'ko'}
-                current_lang = lang_map.get(lang, 'en')
-                
-                is_valid, message = self._validate_text_quality(text, current_lang)
-                if is_valid and len(text) > best_confidence:
-                    best_lang = current_lang
-                    best_confidence = len(text)
+                confidence = self._calculate_text_confidence(text, lang)
+                logger.info(f"📊 {lang} confidence: {confidence:.2f}")
+                if confidence > best_confidence:
+                    best_lang = lang
+                    best_confidence = confidence
             
-            logger.info(f"🎯 Final language selection: {best_lang}")
+            # If no good results, try OSD as fallback
+            if best_confidence < 0.3:
+                osd_lang = await self._try_osd_detection(processed_image)
+                if osd_lang and self.is_language_available(osd_lang):
+                    best_lang = osd_lang
+                    logger.info(f"🔄 Using OSD detected language: {best_lang}")
+            
+            logger.info(f"🎯 Final language selection: {best_lang} (confidence: {best_confidence:.2f})")
             return best_lang
             
         except Exception as e:
             logger.warning(f"Language detection failed: {e}, defaulting to English")
             return 'en'
+    
+    def _calculate_text_confidence(self, text, language):
+        """Calculate confidence score for detected text"""
+        if not text or len(text.strip()) < 3:
+            return 0
+        
+        text = text.strip()
+        total_chars = len(text)
+        
+        if language == 'am':
+            # Count Amharic characters
+            amharic_chars = sum(1 for c in text if ('\u1200' <= c <= '\u137F'))
+            return amharic_chars / total_chars if total_chars > 0 else 0
+        
+        elif language in ['ar', 'ara']:
+            # Count Arabic characters
+            arabic_chars = sum(1 for c in text if ('\u0600' <= c <= '\u06FF'))
+            return arabic_chars / total_chars if total_chars > 0 else 0
+        
+        elif language in ['zh', 'chi_sim']:
+            # Count Chinese characters
+            chinese_chars = sum(1 for c in text if ('\u4e00' <= c <= '\u9fff'))
+            return chinese_chars / total_chars if total_chars > 0 else 0
+        
+        elif language in ['ja', 'jpn']:
+            # Count Japanese characters (Hiragana, Katakana, Kanji)
+            japanese_chars = sum(1 for c in text if (
+                '\u3040' <= c <= '\u309F' or  # Hiragana
+                '\u30A0' <= c <= '\u30FF' or  # Katakana  
+                '\u4e00' <= c <= '\u9fff'     # Kanji
+            ))
+            return japanese_chars / total_chars if total_chars > 0 else 0
+        
+        elif language in ['ko', 'kor']:
+            # Count Korean characters
+            korean_chars = sum(1 for c in text if ('\uAC00' <= c <= '\uD7A3'))
+            return korean_chars / total_chars if total_chars > 0 else 0
+        
+        else:  # Default to English/Latin
+            # Count English letters and common punctuation
+            english_chars = sum(1 for c in text if (c.isalpha() and c.isascii()))
+            return english_chars / total_chars if total_chars > 0 else 0
+    
+    async def _try_osd_detection(self, image):
+        """Try OSD (Orientation and Script Detection)"""
+        try:
+            osd_data = await asyncio.get_event_loop().run_in_executor(
+                thread_pool,
+                self._get_osd_data,
+                image
+            )
+            
+            if osd_data:
+                for line in osd_data.split('\n'):
+                    if line.startswith('Script:'):
+                        script = line.split(':')[1].strip()
+                        script_to_lang = {
+                            'Latin': 'en',
+                            'Cyrillic': 'ru', 
+                            'Arabic': 'ar',
+                            'Devanagari': 'hi',
+                            'HanS': 'zh',
+                            'Hangul': 'ko',
+                            'Japanese': 'ja',
+                            'Amharic': 'am',
+                            'Ethiopic': 'am'
+                        }
+                        detected_lang = script_to_lang.get(script, 'en')
+                        logger.info(f"📜 OSD detected script: {script} -> language: {detected_lang}")
+                        return detected_lang
+        except Exception as e:
+            logger.warning(f"OSD detection failed: {e}")
+        return None
     
     def _get_osd_data(self, image):
         """Get OSD data from image"""
@@ -122,67 +272,75 @@ class OCRProcessor:
         except:
             return ""
     
-    def _extract_script_from_osd(self, osd_result):
-        """Extract script from OSD result"""
-        if not osd_result:
-            return "Unknown"
+    async def amharic_specific_ocr(self, processed_image, original_image_bytes):
+        """Amharic-specific OCR processing - only if Amharic is available"""
+        strategies = []
         
-        for line in osd_result.split('\n'):
-            if line.startswith('Script:'):
-                return line.split(':')[1].strip()
-        return "Unknown"
+        if self.is_language_available('am'):
+            strategies.extend([
+                ('amh', get_amharic_config()),
+                ('amh', '--oem 1 --psm 6'),
+                ('amh', '--oem 1 --psm 4'),
+            ])
+        
+        # Always include English as fallback
+        if self.is_language_available('en'):
+            strategies.append(('eng', '--oem 1 --psm 6'))
+        
+        best_text = ""
+        for lang, config in strategies:
+            try:
+                text = await self.extract_with_tesseract(processed_image, lang, config)
+                if text and len(text.strip()) > len(best_text.strip()):
+                    best_text = text
+                    # If we get good Amharic text, return early
+                    if lang == 'amh' and self.is_likely_amharic(text):
+                        logger.info(f"✅ Good Amharic text found with {lang}")
+                        break
+            except Exception as e:
+                logger.warning(f"Amharic strategy {lang} failed: {e}")
+                continue
+        
+        return best_text
     
-    def _detect_script_from_text(self, text):
-        """Detect script from text content"""
-        if not text:
-            return "Unknown"
+    async def english_or_auto_ocr(self, processed_image, detected_language):
+        """OCR for English and other non-Amharic languages - only available ones"""
+        strategies = []
         
-        # Simple script detection based on character ranges
-        amharic_chars = sum(1 for c in text if is_amharic_character(c))
-        english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-        arabic_chars = sum(1 for c in text if '\u0600' <= c <= '\u06FF')
-        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-        japanese_chars = sum(1 for c in text if ('\u3040' <= c <= '\u309F' or '\u30A0' <= c <= '\u30FF'))
-        korean_chars = sum(1 for c in text if '\uAC00' <= c <= '\uD7A3')
+        # Add specific language if detected and available
+        if detected_language and detected_language != 'en' and detected_language != 'am':
+            if self.is_language_available(detected_language):
+                tess_code = self._get_tesseract_code_from_lang(detected_language)
+                if self.is_language_available('en'):
+                    strategies.append((f'{tess_code}+eng', '--oem 3 --psm 6'))
+                else:
+                    strategies.append((tess_code, '--oem 3 --psm 6'))
         
-        if amharic_chars > 0:
-            return "Amharic"
-        elif arabic_chars > 0:
-            return "Arabic"
-        elif chinese_chars > 0:
-            return "Chinese"
-        elif japanese_chars > 0:
-            return "Japanese"
-        elif korean_chars > 0:
-            return "Korean"
-        elif english_chars > 0:
-            return "Latin"
-        else:
-            return "Unknown"
-    
-    def _get_language_from_script(self, script):
-        """Convert script name to language code"""
-        script_map = {
-            "Amharic": "am",
-            "Arabic": "ar", 
-            "Chinese": "zh",
-            "Japanese": "ja",
-            "Korean": "ko",
-            "Latin": "en"
-        }
-        return script_map.get(script, "en")
-    
-    def _validate_text_quality(self, text, language):
-        """Validate text quality for a given language"""
-        if not text or len(text.strip()) < 3:
-            return False, "Text too short"
+        # Always include English strategies
+        if self.is_language_available('en'):
+            strategies.extend([
+                ('eng', '--oem 3 --psm 6'),   # English, uniform block
+                ('eng', '--oem 3 --psm 3'),   # English, fully automatic
+            ])
         
-        # Basic validation - check if text has reasonable character diversity
-        unique_chars = len(set(text))
-        if unique_chars < 2:
-            return False, "Not enough character diversity"
+        # Add OSD if available (OSD doesn't require specific language files)
+        strategies.append(('osd', '--oem 3 --psm 3'))   # Auto script detection
         
-        return True, "Valid text"
+        best_text = ""
+        for lang, config in strategies:
+            try:
+                text = await self.extract_with_tesseract(processed_image, lang, config)
+                if text and len(text.strip()) > len(best_text.strip()):
+                    best_text = text
+                    # If we get good English text, return early
+                    if self.is_likely_english(text):
+                        logger.info(f"✅ Good English text found with {lang}")
+                        break
+            except Exception as e:
+                logger.warning(f"English/Auto strategy {lang} failed: {e}")
+                continue
+        
+        return best_text
     
     def is_likely_english(self, text):
         """Check if text is likely English"""
@@ -215,58 +373,6 @@ class OCRProcessor:
         # At least 30% should be Amharic characters to be considered Amharic
         amharic_ratio = amharic_chars / total_chars
         return amharic_ratio > 0.3
-    
-    async def amharic_specific_ocr(self, processed_image, original_image_bytes):
-        """Amharic-specific OCR processing"""
-        strategies = [
-            ('amh+amh_vert', get_amharic_config()),
-            ('amh+amh_vert', '--oem 1 --psm 6'),
-            ('amh', '--oem 1 --psm 4'),
-            ('amh+eng', '--oem 1 --psm 6'),  # Fallback to English if needed
-        ]
-        
-        best_text = ""
-        for lang, config in strategies:
-            try:
-                text = await self.extract_with_tesseract(processed_image, lang, config)
-                if text and len(text.strip()) > len(best_text.strip()):
-                    best_text = text
-                    # If we get good Amharic text, return early
-                    if self.is_likely_amharic(text):
-                        break
-            except Exception as e:
-                logger.warning(f"Amharic strategy {lang} failed: {e}")
-                continue
-        
-        return best_text
-    
-    async def english_or_auto_ocr(self, processed_image, detected_language):
-        """OCR for English and other non-Amharic languages"""
-        strategies = [
-            ('eng', '--oem 3 --psm 6'),   # English, uniform block
-            ('eng', '--oem 3 --psm 3'),   # English, fully automatic
-            ('osd', '--oem 3 --psm 3'),   # Auto script detection
-            ('eng+osd', '--oem 3 --psm 6'), # English with auto-detection fallback
-        ]
-        
-        # Add specific language strategies if detected
-        if detected_language and detected_language != 'eng' and detected_language != 'amh':
-            strategies.insert(0, (f'{detected_language}+eng', '--oem 3 --psm 6'))
-        
-        best_text = ""
-        for lang, config in strategies:
-            try:
-                text = await self.extract_with_tesseract(processed_image, lang, config)
-                if text and len(text.strip()) > len(best_text.strip()):
-                    best_text = text
-                    # If we get good English text, return early
-                    if self.is_likely_english(text):
-                        break
-            except Exception as e:
-                logger.warning(f"English/Auto strategy {lang} failed: {e}")
-                continue
-        
-        return best_text
     
     def preservative_preprocessing(self, image_bytes):
         """Gentle preprocessing that preserves original character shapes"""

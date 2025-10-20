@@ -2,6 +2,8 @@
 import os
 import logging
 import asyncio
+import signal
+import sys
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram import Update
 from dotenv import load_dotenv
@@ -15,6 +17,14 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Signal handlers for graceful shutdown
+def signal_handler(signum, frame):
+    logger.info(f"📦 Received signal {signum}, shutting down gracefully...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 # Load environment variables
 load_dotenv()
@@ -118,6 +128,42 @@ except ImportError as e:
     handle_image = fallback_image
     logger.warning("⚠️ Using fallback handlers due to import errors")
 
+async def diagnose_tesseract_setup():
+    """Diagnose Tesseract setup and available languages"""
+    try:
+        from utils.image_processing import ocr_processor
+        import pytesseract
+        
+        logger.info("🔧 Running Tesseract diagnostics...")
+        
+        # Check Tesseract version
+        version = pytesseract.get_tesseract_version()
+        logger.info(f"✅ Tesseract version: {version}")
+        
+        # Check available languages
+        logger.info(f"🌍 Available languages: {ocr_processor.available_languages}")
+        
+        # Check TESSDATA_PREFIX
+        tessdata_prefix = os.getenv('TESSDATA_PREFIX', 'Not set')
+        logger.info(f"📁 TESSDATA_PREFIX: {tessdata_prefix}")
+        
+        # Log language support status
+        supported_langs = ['en', 'am', 'ar', 'zh', 'ja', 'ko', 'es', 'fr', 'de', 'ru']
+        logger.info("🔤 Language Support Status:")
+        for lang in supported_langs:
+            status = "✅" if ocr_processor.is_language_available(lang) else "❌"
+            tess_code = ocr_processor._get_tesseract_code_from_lang(lang)
+            logger.info(f"   {status} {lang} - {tess_code}")
+        
+        # Log total available languages
+        total_available = len(ocr_processor.available_languages)
+        logger.info(f"📊 Total available languages: {total_available}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"❌ Tesseract diagnostics failed: {e}")
+        return False
+
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Enhanced error handling with better logging"""
     logger.error(f"Update {update} caused error {context.error}")
@@ -162,6 +208,9 @@ async def post_init(application: Application):
     """Enhanced initialization after bot starts"""
     logger.info("🔄 Running post-initialization checks...")
     
+    # Run Tesseract diagnostics first
+    await diagnose_tesseract_setup()
+    
     # Check OCR engine status
     try:
         ocr_status = "✅ OCR Engine Ready"
@@ -183,6 +232,10 @@ async def post_init(application: Application):
             logger.info("✅ Database connection active")
     except Exception as e:
         logger.error(f"❌ Database check failed: {e}")
+    
+    # Log available language count for user information
+    available_count = len(ocr_processor.available_languages)
+    logger.info(f"🌍 OCR Bot supports {available_count} languages")
     
     logger.info("🚀 Enhanced OCR Bot is ready!")
 
@@ -215,7 +268,7 @@ def main():
         # Railway-specific logging
         logger.info("🚄 Starting Enhanced OCR Bot on Railway...")
         logger.info("📊 Environment: PRODUCTION")
-        logger.info("🌍 Supported: Amharic, Blurry Images, 100+ Languages")
+        logger.info("🌍 Multi-language OCR Support")
         
         # Create application with enhanced settings
         application = (
@@ -271,6 +324,7 @@ def main():
         
         logger.info("✅ All handlers registered successfully")
         logger.info("🔧 Enhanced Features:")
+        logger.info("   • Smart language detection")
         logger.info("   • Multi-strategy OCR for blurry images")
         logger.info("   • Advanced Amharic language support")
         logger.info("   • Enhanced text formatting")
@@ -302,6 +356,8 @@ def main():
             logger.error("🔑 BOT_TOKEN might be invalid. Please check your environment variables.")
         elif "network" in str(e).lower() or "connection" in str(e).lower():
             logger.error("🌐 Network connection issue. Please check your internet connection.")
+        elif "tesseract" in str(e).lower():
+            logger.error("🔤 Tesseract OCR issue. Please check if Tesseract is installed correctly.")
         else:
             logger.error("💡 Check the logs above for specific error details.")
 
