@@ -1,0 +1,19 @@
+[phases.setup]
+cmds = [
+    "apt-get update",
+    "apt-get install -y tesseract-ocr tesseract-ocr-all libtesseract-dev libleptonica-dev pkg-config",
+    "apt-get clean",
+    "rm -rf /var/lib/apt/lists/*"
+]
+
+[phases.install]
+cmds = [
+    "pip install --no-cache-dir -r requirements.txt"
+]
+
+[start]
+cmd = "python app.py"
+
+[environment]
+PYTHONUNBUFFERED = "1"
+TESSDATA_PREFIX = "/usr/share/tesseract-ocr/4.00/tessdata"
