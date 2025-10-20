@@ -171,11 +171,17 @@ class OCRProcessor:
             
             processing_time = time.time() - start_time
             
+            # Debug the raw extracted text
+            self.debug_text_content(text, "Raw OCR Output")
+            
             if not text or len(text.strip()) < 2:
                 return "🔍 No readable text found. Please try a clearer image."
             
             # Clean text while preserving formatting
             cleaned_text = self.preservative_clean_text(text)
+            
+            # Debug the cleaned text
+            self.debug_text_content(cleaned_text, "After Cleaning")
             
             logger.info(f"✅ {detected_language.upper()} OCR completed in {processing_time:.2f}s")
             return cleaned_text
@@ -338,14 +344,16 @@ class OCRProcessor:
             return ""
     
     async def amharic_specific_ocr(self, processed_image, original_image_bytes):
-        """Amharic-specific OCR processing - only if Amharic is available"""
+        """Amharic-specific OCR processing with enhanced configuration"""
         strategies = []
         
         if self.is_language_available('am'):
+            # Enhanced Amharic configurations
             strategies.extend([
-                ('amh', get_amharic_config()),
-                ('amh', '--oem 1 --psm 6'),
-                ('amh', '--oem 1 --psm 4'),
+                ('amh', '--oem 1 --psm 6 -c preserve_interword_spaces=1'),
+                ('amh', '--oem 1 --psm 4 -c preserve_interword_spaces=1'),
+                ('amh', '--oem 1 --psm 3 -c preserve_interword_spaces=1'),  # Fully automatic
+                ('amh+eng', '--oem 1 --psm 6 -c preserve_interword_spaces=1'),  # Fallback to English
             ])
         
         # Always include English as fallback
@@ -353,20 +361,61 @@ class OCRProcessor:
             strategies.append(('eng', '--oem 1 --psm 6'))
         
         best_text = ""
+        best_confidence = 0
+        
         for lang, config in strategies:
             try:
                 text = await self.extract_with_tesseract(processed_image, lang, config)
-                if text and len(text.strip()) > len(best_text.strip()):
-                    best_text = text
-                    # If we get good Amharic text, return early
-                    if lang == 'amh' and self.is_likely_amharic(text):
-                        logger.info(f"✅ Good Amharic text found with {lang}")
+                if text and text.strip():
+                    # Calculate confidence for this result
+                    confidence = self._calculate_amharic_confidence(text)
+                    
+                    logger.info(f"🔤 {lang} extracted {len(text)} chars, confidence: {confidence:.2f}")
+                    
+                    # Keep the text with highest Amharic confidence
+                    if confidence > best_confidence:
+                        best_text = text
+                        best_confidence = confidence
+                        logger.info(f"🎯 New best Amharic text with {lang}")
+                    
+                    # If we get very good Amharic text, return early
+                    if lang.startswith('amh') and confidence > 0.5:
+                        logger.info(f"✅ High confidence Amharic text found with {lang}")
                         break
             except Exception as e:
                 logger.warning(f"Amharic strategy {lang} failed: {e}")
                 continue
         
+        logger.info(f"🏆 Best Amharic confidence: {best_confidence:.2f}")
         return best_text
+
+    def _calculate_amharic_confidence(self, text):
+        """Calculate confidence that text contains meaningful Amharic content"""
+        if not text or len(text.strip()) < 3:
+            return 0
+        
+        text = text.strip()
+        total_chars = len(text)
+        
+        # Count Amharic characters (Ethiopic Unicode range)
+        amharic_chars = sum(1 for c in text if ('\u1200' <= c <= '\u137F'))
+        
+        # Count word characters (non-whitespace, non-punctuation)
+        word_chars = sum(1 for c in text if c.isalpha())
+        
+        # Calculate Amharic character ratio
+        if total_chars == 0:
+            return 0
+        
+        amharic_ratio = amharic_chars / total_chars
+        
+        # Bonus if we have reasonable word length
+        word_confidence = min(word_chars / 10, 1.0)  # Cap at 1.0
+        
+        # Combined confidence
+        confidence = (amharic_ratio * 0.7) + (word_confidence * 0.3)
+        
+        return confidence
     
     async def english_or_auto_ocr(self, processed_image, detected_language):
         """OCR for English and other non-Amharic languages - only available ones"""
@@ -463,10 +512,12 @@ class OCRProcessor:
             return Image.open(io.BytesIO(image_bytes)).convert('L')
     
     def preservative_clean_text(self, text):
-        """Clean text while preserving original formatting and bullets"""
+        """Clean text while preserving Amharic and other Unicode characters"""
         if not text:
             return ""
         
+        # First, preserve all Unicode characters including Amharic
+        # Don't strip or modify non-ASCII characters
         lines = text.split('\n')
         cleaned_lines = []
         
@@ -474,8 +525,8 @@ class OCRProcessor:
             original_line = line.rstrip()
             
             if original_line:
-                # Fix common OCR artifacts while preserving meaningful characters
-                cleaned_line = self.fix_ocr_artifacts(original_line)
+                # Only fix common OCR artifacts, don't modify Amharic characters
+                cleaned_line = self.fix_ocr_artifacts_preserve_unicode(original_line)
                 cleaned_lines.append(cleaned_line)
             else:
                 # Preserve empty lines for paragraph separation
@@ -483,14 +534,18 @@ class OCRProcessor:
         
         # Join back with original line breaks
         result = '\n'.join(cleaned_lines)
+        
+        # Remove excessive whitespace but preserve meaningful spacing
+        result = self.normalize_whitespace(result)
+        
         return result.strip()
-    
-    def fix_ocr_artifacts(self, line):
-        """Fix common OCR artifacts while preserving original characters"""
+
+    def fix_ocr_artifacts_preserve_unicode(self, line):
+        """Fix common OCR artifacts while preserving Unicode characters"""
         if not line:
             return line
         
-        # Fix bullet artifacts
+        # Fix bullet artifacts - only for Latin characters
         bullet_replacements = {
             'e ': '• ',
             'o ': '• ',
@@ -504,13 +559,48 @@ class OCRProcessor:
             '· ': '• ',
         }
         
-        # Check if line starts with a bullet pattern
+        # Check if line starts with a bullet pattern (only for ASCII)
         for wrong_bullet, correct_bullet in bullet_replacements.items():
             if line.startswith(wrong_bullet):
                 line = line.replace(wrong_bullet, correct_bullet, 1)
                 break
         
         return line
+
+    def normalize_whitespace(self, text):
+        """Normalize whitespace without removing meaningful spacing"""
+        # Replace multiple spaces with single space, but preserve newlines
+        lines = text.split('\n')
+        normalized_lines = []
+        
+        for line in lines:
+            # Collapse multiple spaces within a line
+            normalized_line = ' '.join(line.split())
+            normalized_lines.append(normalized_line)
+        
+        return '\n'.join(normalized_lines)
+
+    def debug_text_content(self, text, stage):
+        """Debug method to log text content at different stages"""
+        if not text:
+            logger.info(f"🔍 {stage}: Empty text")
+            return
+        
+        logger.info(f"🔍 {stage}: {len(text)} characters")
+        
+        # Log first 200 characters for inspection
+        preview = text[:200].replace('\n', '\\n')
+        logger.info(f"📄 Preview: {preview}")
+        
+        # Count character types
+        amharic_chars = sum(1 for c in text if ('\u1200' <= c <= '\u137F'))
+        latin_chars = sum(1 for c in text if c.isalpha() and c.isascii())
+        total_chars = len(text)
+        
+        logger.info(f"📊 Chars - Amharic: {amharic_chars}, Latin: {latin_chars}, Total: {total_chars}")
+        
+        if total_chars > 0:
+            logger.info(f"📈 Ratios - Amharic: {amharic_chars/total_chars:.2%}, Latin: {latin_chars/total_chars:.2%}")
     
     async def extract_with_tesseract(self, image, lang, config):
         """Extract text with Tesseract"""
@@ -523,20 +613,6 @@ class OCRProcessor:
             return text
         except Exception as e:
             logger.error(f"Tesseract extraction failed for {lang}: {e}")
-            return ""
-    
-    def _tesseract_extract(self, image, lang, config):
-        """Synchronous Tesseract extraction"""
-        try:
-            text = pytesseract.image_to_string(
-                image,
-                lang=lang,
-                config=config,
-                timeout=30
-            )
-            return text
-        except Exception as e:
-            logger.error(f"Tesseract error for {lang}: {e}")
             return ""
 
 # Global instance
