@@ -19,13 +19,51 @@ class OCRProcessor:
         self._load_available_languages()
     
     def setup_tesseract(self):
-        """Setup Tesseract with enhanced configuration"""
+        """Setup Tesseract with Railway-specific configuration"""
         try:
+            # Check if we're on Railway
+            is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
+            
+            if is_railway:
+                # On Railway, Tesseract should be in standard Linux path
+                pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+                logger.info("🚄 Railway environment detected - using system Tesseract")
+            else:
+                # On local Windows, use default detection
+                logger.info("💻 Local environment detected - using default Tesseract")
+                
             version = pytesseract.get_tesseract_version()
             logger.info(f"✅ Tesseract v{version} initialized successfully")
+            
+            # Verify Tesseract is working
+            test_image = Image.new('RGB', (100, 30), color='white')
+            test_text = pytesseract.image_to_string(test_image, config='--psm 8')
+            logger.info("✅ Tesseract test completed successfully")
+            
             return True
         except Exception as e:
             logger.error(f"Tesseract initialization failed: {e}")
+            
+            # Try to find Tesseract on Railway
+            if os.getenv('RAILWAY_ENVIRONMENT'):
+                logger.info("🔍 Searching for Tesseract on Railway...")
+                possible_paths = [
+                    '/usr/bin/tesseract',
+                    '/usr/local/bin/tesseract',
+                    '/bin/tesseract'
+                ]
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        pytesseract.pytesseract.tesseract_cmd = path
+                        logger.info(f"✅ Found Tesseract at: {path}")
+                        try:
+                            version = pytesseract.get_tesseract_version()
+                            logger.info(f"✅ Tesseract v{version} now working")
+                            return True
+                        except:
+                            continue
+            
+            logger.error("❌ Could not find working Tesseract installation")
             return False
     
     def _load_available_languages(self):
@@ -59,7 +97,7 @@ class OCRProcessor:
                 available.append(lang)
                 logger.info(f"✅ Language {lang} is available")
             except Exception as e:
-                logger.info(f"❌ Language {lang} is not available: {e}")
+                logger.info(f"❌ Language {lang} is not available: {str(e)[:100]}")
                 continue
         
         self.available_languages = available if available else ['eng']
@@ -96,10 +134,15 @@ class OCRProcessor:
         return mapping.get(tess_code, 'en')
     
     async def extract_text_optimized(self, image_bytes, language=None):
-        """Enhanced text extraction with smart language detection"""
+        """Enhanced text extraction with Railway fallback"""
         start_time = time.time()
         
         try:
+            # First, verify Tesseract is working
+            if not await self.verify_tesseract_working():
+                logger.error("❌ Tesseract not working, using fallback message")
+                return "🔧 OCR service is temporarily unavailable. Please try again later or contact support."
+            
             # Gentle preprocessing
             processed_image = await asyncio.get_event_loop().run_in_executor(
                 thread_pool,
@@ -130,7 +173,22 @@ class OCRProcessor:
             
         except Exception as e:
             logger.error(f"OCR processing failed: {e}")
-            return f"❌ Processing error: {str(e)}"
+            return "❌ OCR processing failed. Please try again with a different image."
+    
+    async def verify_tesseract_working(self):
+        """Verify Tesseract is working on Railway"""
+        try:
+            test_image = Image.new('RGB', (100, 30), color='white')
+            test_text = await asyncio.get_event_loop().run_in_executor(
+                thread_pool,
+                pytesseract.image_to_string,
+                test_image,
+                '--psm 8'
+            )
+            return True
+        except Exception as e:
+            logger.error(f"❌ Tesseract verification failed: {e}")
+            return False
     
     async def detect_language_smart(self, processed_image):
         """Enhanced language detection that only uses available languages"""

@@ -4,6 +4,7 @@ import logging
 import asyncio
 import signal
 import sys
+import subprocess
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram import Update
 from dotenv import load_dotenv
@@ -128,6 +129,33 @@ except ImportError as e:
     handle_image = fallback_image
     logger.warning("⚠️ Using fallback handlers due to import errors")
 
+async def check_railway_environment():
+    """Check if we're running on Railway and verify setup"""
+    is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
+    if is_railway:
+        logger.info("🚄 Running in Railway environment")
+        
+        # Verify Tesseract installation
+        try:
+            result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.info(f"✅ Tesseract found at: {result.stdout.strip()}")
+            else:
+                logger.error("❌ Tesseract not found in PATH on Railway")
+                
+            # Test Tesseract
+            version_result = subprocess.run(['tesseract', '--version'], capture_output=True, text=True)
+            if version_result.returncode == 0:
+                logger.info("✅ Tesseract is working on Railway")
+                logger.info(f"📄 Tesseract output: {version_result.stdout.splitlines()[0]}")
+            else:
+                logger.error(f"❌ Tesseract test failed: {version_result.stderr}")
+                
+        except Exception as e:
+            logger.error(f"❌ Railway Tesseract check failed: {e}")
+    
+    return is_railway
+
 async def diagnose_tesseract_setup():
     """Diagnose Tesseract setup and available languages"""
     try:
@@ -208,7 +236,10 @@ async def post_init(application: Application):
     """Enhanced initialization after bot starts"""
     logger.info("🔄 Running post-initialization checks...")
     
-    # Run Tesseract diagnostics first
+    # Check Railway environment first
+    await check_railway_environment()
+    
+    # Run Tesseract diagnostics
     await diagnose_tesseract_setup()
     
     # Check OCR engine status
