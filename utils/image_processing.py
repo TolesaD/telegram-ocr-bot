@@ -102,7 +102,7 @@ class OCRProcessor:
         for lang in common_langs:
             try:
                 # Quick test to see if language is available
-                pytesseract.image_to_string(test_image, lang=lang, config='--psm 8 -c min_characters_to_try=1')
+                pytesseract.image_to_string(test_image, lang=lang, config='--psm 8')
                 available.append(lang)
                 logger.info(f"✅ Language {lang} is available")
             except Exception as e:
@@ -190,9 +190,7 @@ class OCRProcessor:
             test_image = Image.new('RGB', (100, 30), color='white')
             test_text = await asyncio.get_event_loop().run_in_executor(
                 thread_pool,
-                pytesseract.image_to_string,
-                test_image,
-                '--psm 8'
+                lambda: pytesseract.image_to_string(test_image, config='--psm 8')
             )
             return True
         except Exception as e:
@@ -520,10 +518,7 @@ class OCRProcessor:
         try:
             text = await loop.run_in_executor(
                 thread_pool,
-                self._tesseract_extract,
-                image,
-                lang,
-                config
+                lambda: pytesseract.image_to_string(image, lang=lang, config=config, timeout=30)
             )
             return text
         except Exception as e:
