@@ -6,6 +6,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 import io
 import os
 import pytesseract
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from ocr_engine.language_support import get_tesseract_code, get_amharic_config, is_amharic_character
 
@@ -19,19 +20,17 @@ class OCRProcessor:
         self._load_available_languages()
     
     def setup_tesseract(self):
-        """Setup Tesseract with Railway-specific configuration"""
+        """Setup Tesseract with automatic path detection"""
         try:
-            # Check if we're on Railway
-            is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
-            
-            if is_railway:
-                # On Railway, Tesseract should be in standard Linux path
-                pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
-                logger.info("🚄 Railway environment detected - using system Tesseract")
+            # Try to find Tesseract automatically
+            tesseract_path = self._find_tesseract()
+            if tesseract_path:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+                logger.info(f"✅ Tesseract found at: {tesseract_path}")
             else:
-                # On local Windows, use default detection
-                logger.info("💻 Local environment detected - using default Tesseract")
-                
+                logger.error("❌ Could not find Tesseract installation")
+                return False
+            
             version = pytesseract.get_tesseract_version()
             logger.info(f"✅ Tesseract v{version} initialized successfully")
             
@@ -43,28 +42,38 @@ class OCRProcessor:
             return True
         except Exception as e:
             logger.error(f"Tesseract initialization failed: {e}")
-            
-            # Try to find Tesseract on Railway
-            if os.getenv('RAILWAY_ENVIRONMENT'):
-                logger.info("🔍 Searching for Tesseract on Railway...")
-                possible_paths = [
-                    '/usr/bin/tesseract',
-                    '/usr/local/bin/tesseract',
-                    '/bin/tesseract'
-                ]
-                for path in possible_paths:
-                    if os.path.exists(path):
-                        pytesseract.pytesseract.tesseract_cmd = path
-                        logger.info(f"✅ Found Tesseract at: {path}")
-                        try:
-                            version = pytesseract.get_tesseract_version()
-                            logger.info(f"✅ Tesseract v{version} now working")
-                            return True
-                        except:
-                            continue
-            
-            logger.error("❌ Could not find working Tesseract installation")
             return False
+    
+    def _find_tesseract(self):
+        """Find Tesseract installation path"""
+        # Common paths where Tesseract might be installed
+        possible_paths = [
+            '/usr/bin/tesseract',
+            '/usr/local/bin/tesseract', 
+            '/bin/tesseract',
+            '/app/bin/tesseract',
+            '/usr/share/tesseract-ocr/tesseract'
+        ]
+        
+        # Also try to find via which command
+        try:
+            result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
+            if result.returncode == 0:
+                found_path = result.stdout.strip()
+                if found_path and os.path.exists(found_path):
+                    logger.info(f"🔍 Found Tesseract via 'which': {found_path}")
+                    return found_path
+        except:
+            pass
+        
+        # Check possible paths
+        for path in possible_paths:
+            if os.path.exists(path):
+                logger.info(f"🔍 Found Tesseract at: {path}")
+                return path
+        
+        logger.error("❌ Could not find Tesseract in any known location")
+        return None
     
     def _load_available_languages(self):
         """Load available Tesseract languages"""
@@ -176,7 +185,7 @@ class OCRProcessor:
             return "❌ OCR processing failed. Please try again with a different image."
     
     async def verify_tesseract_working(self):
-        """Verify Tesseract is working on Railway"""
+        """Verify Tesseract is working"""
         try:
             test_image = Image.new('RGB', (100, 30), color='white')
             test_text = await asyncio.get_event_loop().run_in_executor(

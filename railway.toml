@@ -1,0 +1,16 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[deploy]
+startCommand = "python app.py"
+
+[env]
+BOT_TOKEN = "8327516444:AAGblijJShx3Uh9cWU7coADtUl_PnAeDZ5A"
+MONGODB_URI = "mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/?retryWrites=true&w=majority"
+SUPPORT_EMAIL = "@ImageToTextConverterSuportBot"
+CHANNEL = "@ImageToTextConverter"
+ADMIN_IDS = "417079598"
+
+[build.environment]
+TESSDATA_PREFIX = "/usr/share/tesseract-ocr/5/tessdata"
