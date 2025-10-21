@@ -208,29 +208,10 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     else:
         await update.effective_message.reply_text(welcome_text, parse_mode='Markdown')
     
-    # Send pinned "Restart the bot" message with clickable button
-    keyboard = [[InlineKeyboardButton("🔄 Restart Bot", callback_data="restart_bot")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    restart_message = await update.effective_chat.send_message(
-        "🔄 *Quick Restart*\nClick below to restart the bot anytime!",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-    try:
-        await context.bot.pin_chat_message(
-            chat_id=update.effective_chat.id,
-            message_id=restart_message.message_id,
-            disable_notification=True
-        )
-        logger.info(f"📌 Pinned restart message for user {user.id}")
-    except Exception as e:
-        logger.error(f"❌ Failed to pin message for user {user.id}: {e}")
-    
     # Enhanced persistent keyboard with better labels
     keyboard = [
         ['📸 Convert Image', '⚙️ Settings'],
         ['📊 Statistics', '❓ Help'],
-        ['🔄 Restart Bot']
     ]
     reply_markup = ReplyKeyboardMarkup(
         keyboard,

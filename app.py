@@ -102,7 +102,7 @@ except ImportError as e:
 
 # Now import handlers with enhanced error handling
 try:
-    from handlers.start import start_command, handle_membership_check, force_check_membership, handle_start_callback
+    from handlers.start import handle_membership_check, force_check_membership, handle_start_callback
     from handlers.help import help_command, handle_help_callback
     from handlers.ocr import handle_image, handle_reformat, handle_ocr_callback
     from handlers.menu import (
@@ -110,6 +110,17 @@ try:
         handle_convert_image, show_format_menu,
         handle_format_change
     )
+    
+    # Import enhanced menu handlers
+    from handlers.menu_enhanced import (
+        show_enhanced_main_menu, 
+        handle_quick_actions,
+        show_quick_settings,
+        show_quick_statistics,
+        show_quick_help,
+        get_main_menu_keyboard
+    )
+    
     logger.info("✅ All handlers imported successfully")
 except ImportError as e:
     logger.error(f"❌ Handler import failed: {e}")
@@ -124,10 +135,14 @@ except ImportError as e:
         await update.message.reply_text("📸 Image processing is temporarily unavailable. Please try again later.")
     
     # Assign fallback handlers
-    start_command = fallback_start
     help_command = fallback_help
     handle_image = fallback_image
     logger.warning("⚠️ Using fallback handlers due to import errors")
+
+# Use enhanced main menu as start command
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enhanced start command with menu"""
+    await show_enhanced_main_menu(update, context)
 
 async def check_railway_environment():
     """Check if we're running on Railway and verify setup"""
@@ -218,20 +233,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Failed to send error message: {e}")
 
-async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text from persistent keyboard"""
-    text = update.message.text
-    if text == "📸 Convert Image":
-        await handle_convert_image(update, context)
-    elif text == "⚙️ Settings":
-        await show_settings_menu(update, context)
-    elif text == "📊 Statistics":
-        await show_statistics(update, context)
-    elif text == "❓ Help":
-        await help_command(update, context)
-    elif text == "🔄 Restart":
-        await start_command(update, context)
-
 async def post_init(application: Application):
     """Enhanced initialization after bot starts"""
     logger.info("🔄 Running post-initialization checks...")
@@ -314,16 +315,17 @@ def main():
         application.bot_data['db'] = db
         logger.info("✅ Database connected to bot data")
         
-        # Enhanced handler registration with better patterns
+        # Enhanced handler registration with menu support
         handlers = [
             CommandHandler("start", start_command),
             CommandHandler("help", help_command),
-            CommandHandler("settings", show_settings_menu),
-            CommandHandler("stats", show_statistics),
+            CommandHandler("settings", show_quick_settings),
+            CommandHandler("stats", show_quick_statistics),
+            CommandHandler("menu", show_enhanced_main_menu),
             CommandHandler("check", force_check_membership),
             
             MessageHandler(filters.PHOTO, handle_image),
-            MessageHandler(filters.Regex('^(📸 Convert Image|⚙️ Settings|📊 Statistics|❓ Help|🔄 Restart)$'), handle_menu_text),
+            MessageHandler(filters.TEXT & filters.Regex('^(📸 Convert Image|⚙️ Settings|📊 Statistics|❓ Help|🔄 Restart Bot)$'), handle_quick_actions),
         ]
         
         for handler in handlers:
@@ -341,7 +343,15 @@ def main():
             ("change_format", show_format_menu),
             ("set_format_", handle_format_change),
             ("contact_support", handle_help_callback),
-            ("reformat_", handle_reformat)
+            ("reformat_", handle_reformat),
+            # Enhanced menu callbacks
+            ("settings_format", show_format_menu),
+            ("settings_language", show_settings_menu),
+            ("settings_performance", show_settings_menu),
+            ("help_usage", help_command),
+            ("help_languages", help_command),
+            ("help_troubleshoot", help_command),
+            ("help_support", handle_help_callback),
         ]
         
         for pattern, handler in callback_patterns:
@@ -360,6 +370,8 @@ def main():
         logger.info("   • Advanced Amharic language support")
         logger.info("   • Enhanced text formatting")
         logger.info("   • Better error handling and user feedback")
+        logger.info("   • Quick-access menu system")
+        logger.info("   • Performance optimizations")
         
         # Start the bot with enhanced settings
         logger.info("🚀 Starting enhanced bot polling...")

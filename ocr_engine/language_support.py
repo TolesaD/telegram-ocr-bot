@@ -1,250 +1,297 @@
-# ocr_engine/language_support.py
-# Enhanced language support with 100+ languages and improved Amharic handling
+# utils/image_processing.py
+import asyncio
+import logging
+import time
+from PIL import Image, ImageEnhance, ImageFilter
+import io
+import os
+import pytesseract
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+from ocr_engine.language_support import get_tesseract_code, get_amharic_config, is_amharic_character
 
-LANGUAGE_MAPPING = {
-    'af': 'Afrikaans', 'ar': 'Arabic', 'az': 'Azerbaijani', 'be': 'Belarusian',
-    'bg': 'Bulgarian', 'bn': 'Bengali', 'bs': 'Bosnian', 'ca': 'Catalan',
-    'ceb': 'Cebuano', 'cs': 'Czech', 'cy': 'Welsh', 'da': 'Danish',
-    'de': 'German', 'el': 'Greek', 'en': 'English', 'eo': 'Esperanto',
-    'es': 'Spanish', 'et': 'Estonian', 'eu': 'Basque', 'fa': 'Persian',
-    'fi': 'Finnish', 'fr': 'French', 'ga': 'Irish', 'gl': 'Galician',
-    'gu': 'Gujarati', 'ha': 'Hausa', 'hi': 'Hindi', 'hr': 'Croatian',
-    'ht': 'Haitian', 'hu': 'Hungarian', 'hy': 'Armenian', 'id': 'Indonesian',
-    'ig': 'Igbo', 'is': 'Icelandic', 'it': 'Italian', 'iw': 'Hebrew',
-    'ja': 'Japanese', 'jw': 'Javanese', 'ka': 'Georgian', 'kk': 'Kazakh',
-    'km': 'Khmer', 'kn': 'Kannada', 'ko': 'Korean', 'la': 'Latin',
-    'lo': 'Lao', 'lt': 'Lithuanian', 'lv': 'Latvian', 'mg': 'Malagasy',
-    'mi': 'Maori', 'mk': 'Macedonian', 'ml': 'Malayalam', 'mn': 'Mongolian',
-    'mr': 'Marathi', 'ms': 'Malay', 'mt': 'Maltese', 'my': 'Myanmar',
-    'ne': 'Nepali', 'nl': 'Dutch', 'no': 'Norwegian', 'ny': 'Chichewa',
-    'pa': 'Punjabi', 'pl': 'Polish', 'pt': 'Portuguese', 'ro': 'Romanian',
-    'ru': 'Russian', 'si': 'Sinhala', 'sk': 'Slovak', 'sl': 'Slovenian',
-    'so': 'Somali', 'sq': 'Albanian', 'sr': 'Serbian', 'st': 'Sesotho',
-    'su': 'Sundanese', 'sv': 'Swedish', 'sw': 'Swahili', 'ta': 'Tamil',
-    'te': 'Telugu', 'tg': 'Tajik', 'th': 'Thai', 'tl': 'Filipino',
-    'tr': 'Turkish', 'uk': 'Ukrainian', 'ur': 'Urdu', 'uz': 'Uzbek',
-    'vi': 'Vietnamese', 'xh': 'Xhosa', 'yi': 'Yiddish', 'yo': 'Yoruba',
-    'zh': 'Chinese', 'zu': 'Zulu',
-    # Added more for African and Indian
-    'am': 'Amharic', 'bm': 'Bambara', 'ff': 'Fula', 'lg': 'Luganda',
-    'ln': 'Lingala', 'lu': 'Luba-Katanga', 'nd': 'North Ndebele',
-    'om': 'Oromo', 'rn': 'Kirundi', 'rw': 'Kinyarwanda', 'sg': 'Sango',
-    'sn': 'Shona', 'ss': 'Swati', 'ti': 'Tigrinya', 'tn': 'Tswana',
-    'ts': 'Tsonga', 've': 'Venda', 'wo': 'Wolof',
-    'as': 'Assamese', 'bh': 'Bihari', 'or': 'Oriya', 'sd': 'Sindhi'
-}
+logger = logging.getLogger(__name__)
+thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ocr_")  # Reduced for better memory management
 
-# Tesseract language codes (expanded for all)
-TESSERACT_LANGUAGES = {
-    'af': 'afr', 'ar': 'ara', 'az': 'aze', 'be': 'bel', 'bg': 'bul',
-    'bn': 'ben', 'bs': 'bos', 'ca': 'cat', 'ceb': 'ceb', 'cs': 'ces',
-    'cy': 'cym', 'da': 'dan', 'de': 'deu', 'el': 'ell', 'en': 'eng',
-    'eo': 'epo', 'es': 'spa', 'et': 'est', 'eu': 'eus', 'fa': 'fas',
-    'fi': 'fin', 'fr': 'fra', 'ga': 'gle', 'gl': 'glg', 'gu': 'guj',
-    'he': 'heb', 'hi': 'hin', 'hr': 'hrv', 'hu': 'hun', 'hy': 'hye',
-    'id': 'ind', 'is': 'isl', 'it': 'ita', 'ja': 'jpn', 'jw': 'jav',
-    'ka': 'kat', 'kk': 'kaz', 'km': 'khm', 'kn': 'kan', 'ko': 'kor',
-    'la': 'lat', 'lo': 'lao', 'lt': 'lit', 'lv': 'lav', 'mg': 'mlg',
-    'mi': 'mri', 'mk': 'mkd', 'ml': 'mal', 'mn': 'mon', 'mr': 'mar',
-    'ms': 'msa', 'mt': 'mlt', 'my': 'mya', 'ne': 'nep', 'nl': 'nld',
-    'no': 'nor', 'ny': 'nya', 'pa': 'pan', 'pl': 'pol', 'pt': 'por',
-    'ro': 'ron', 'ru': 'rus', 'si': 'sin', 'sk': 'slk', 'sl': 'slv',
-    'so': 'som', 'sq': 'sqi', 'sr': 'srp', 'st': 'sot', 'su': 'sun',
-    'sv': 'swe', 'sw': 'swa', 'ta': 'tam', 'te': 'tel', 'tg': 'tgk',
-    'th': 'tha', 'tl': 'tgl', 'tr': 'tur', 'uk': 'ukr', 'ur': 'urd',
-    'uz': 'uzb', 'vi': 'vie', 'xh': 'xho', 'yi': 'yid', 'yo': 'yor',
-    'zh': 'chi_sim', 'zu': 'zul',
-    # Enhanced support for African languages
-    'am': 'amh+amh_vert', 'as': 'asm', 'bm': 'bam', 'ff': 'ful', 'lg': 'lug',
-    'ln': 'lin', 'lu': 'lua', 'nd': 'nde', 'om': 'orm', 'rn': 'run',
-    'rw': 'kin', 'sg': 'sag', 'sn': 'sna', 'ss': 'ssw', 'ti': 'tir',
-    'tn': 'tsn', 'ts': 'tso', 've': 'ven', 'wo': 'wol', 'or': 'ori',
-    'sd': 'snd'
-}
-
-# Language families for better script detection
-LANGUAGE_FAMILIES = {
-    'am': 'Ethiopic',
-    'ar': 'Arabic',
-    'he': 'Hebrew',
-    'ru': 'Cyrillic',
-    'el': 'Greek',
-    'th': 'Thai',
-    'zh': 'Chinese',
-    'ja': 'Japanese',
-    'ko': 'Korean',
-    'hi': 'Devanagari',
-    'ta': 'Tamil',
-    'te': 'Telugu',
-    'kn': 'Kannada',
-    'ml': 'Malayalam',
-    'en': 'Latin'
-}
-
-# Amharic-specific configuration
-AMHARIC_CONFIG = {
-    'psm': '6',  # Uniform block of text
-    'oem': '1',  # Neural nets LSTM engine only
-    'config': '-c tessedit_char_whitelist=፩፪፫፬፭፮፯፰፱፲፳፴፵፶፷፸፹፺፻፼።፣፤፥፦፧፨፠፡።፣፤፥፦፧፨ᎀᎁᎂᎃᎄᎅᎆᎇᎈᎉᎊᎋᎌᎍᎎᎏ᎐᎑᎒᎓᎔᎕᎖᎗᎘᎙᎚᎛᎜᎝᎞᎟ᎠᎡᎢᎣᎤᎥᎦᎧᎨᎩᎪᎫᎬᎭᎮᎯᎰᎱᎲᎳᎴᎵᎶᎷᎸᎹᎺᎻᎼᎽᎾᎿᏀᏁᏂᏃᏄᏅᏆᏇᏈᏉᏊᏋᏌᏍᏎᏏᏐᏑᏒᏓᏔᏕᏖᏗᏘᏙᏚᏛᏜᏝᏞᏟᏠᏡᏢᏣᏤᏥᏦᏧᏨᏩᏪᏫᏬᏭᏮᏯᏰᏱᏲᏳᏴᏵabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:-()[]{}'
-}
-
-def get_supported_languages():
-    """Return list of supported languages"""
-    return list(LANGUAGE_MAPPING.keys())
-
-def get_language_name(code):
-    """Get language name from code"""
-    return LANGUAGE_MAPPING.get(code, 'Unknown')
-
-def get_tesseract_code(lang_code):
-    """Get Tesseract language code with enhanced Amharic support"""
-    if lang_code == 'am':
-        # Try multiple Amharic configurations
-        return 'amh+amh_vert+eng'  # Fallback to English if Amharic fails
-    return TESSERACT_LANGUAGES.get(lang_code, 'eng')
-
-def get_language_family(lang_code):
-    """Get language family for script-specific processing"""
-    return LANGUAGE_FAMILIES.get(lang_code, 'Latin')
-
-def is_complex_script(lang_code):
-    """Check if language uses complex script requiring special processing"""
-    complex_scripts = ['am', 'ar', 'he', 'th', 'zh', 'ja', 'ko', 'hi']
-    return lang_code in complex_scripts
-
-def get_amharic_config():
-    """Get Amharic-specific Tesseract configuration"""
-    return f'--oem {AMHARIC_CONFIG["oem"]} --psm {AMHARIC_CONFIG["psm"]} {AMHARIC_CONFIG["config"]}'
-
-def is_amharic_character(char):
-    """Check if character is in Amharic Unicode range"""
-    return ('\u1200' <= char <= '\u137F' or 
-            '\u2D80' <= char <= '\u2DDF' or 
-            '\uAB00' <= char <= '\uAB2F')
-
-def get_lang_from_script(script):
-    """Map script to language code with enhanced detection"""
-    mapping = {
-        'Latin': 'eng',
-        'Cyrillic': 'rus',
-        'Arabic': 'ara',
-        'Devanagari': 'hin',
-        'HanS': 'chi_sim',
-        'Hangul': 'kor',
-        'Japanese': 'jpn',
-        'Tamil': 'tam',
-        'Telugu': 'tel',
-        'Kannada': 'kan',
-        'Malayalam': 'mal',
-        'Gujarati': 'guj',
-        'Gurmukhi': 'pan',
-        'Bengali': 'ben',
-        'Amharic': 'amh',
-        'Ethiopic': 'amh',
-        'Ge\'ez': 'amh',  # Add Ge'ez as another name for Ethiopic script
-        'Hebrew': 'heb',
-        'Armenian': 'hye',
-        'Georgian': 'kat',
-        'Thai': 'tha',
-        'Lao': 'lao',
-        'Khmer': 'khm',
-        'Myanmar': 'mya',
-        'Sinhala': 'sin',
-        'Greek': 'ell',
-        'Oriya': 'ori',
-        'Sindhi': 'snd',
-        'Tibetan': 'bod'
-    }
-    return mapping.get(script, 'eng')  # Default to English for unknown scripts
-
-def detect_primary_language(text):
-    """Detect the primary language of text"""
-    if not text or len(text.strip()) < 3:
-        return 'unknown'
+class OCRProcessor:
+    def __init__(self):
+        self.setup_tesseract()
+        self.available_languages = []
+        self._load_available_languages()
+        self.performance_cache = {}  # Cache for performance optimization
     
-    # Count Amharic characters
-    amharic_chars = sum(1 for c in text if is_amharic_character(c))
+    def setup_tesseract(self):
+        """Setup Tesseract with automatic path detection"""
+        try:
+            tesseract_path = self._find_tesseract()
+            if tesseract_path:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+                logger.info(f"✅ Tesseract found at: {tesseract_path}")
+            else:
+                logger.error("❌ Could not find Tesseract installation")
+                return False
+            
+            version = pytesseract.get_tesseract_version()
+            logger.info(f"✅ Tesseract v{version} initialized successfully")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Tesseract initialization failed: {e}")
+            return False
     
-    # Count English letters
-    english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
+    def _find_tesseract(self):
+        """Find Tesseract installation path"""
+        possible_paths = [
+            '/usr/bin/tesseract',
+            '/usr/local/bin/tesseract', 
+            '/bin/tesseract',
+            '/app/bin/tesseract'
+        ]
+        
+        try:
+            result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
+            if result.returncode == 0:
+                found_path = result.stdout.strip()
+                if found_path and os.path.exists(found_path):
+                    return found_path
+        except:
+            pass
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        return None
     
-    total_chars = len(text)
+    def _load_available_languages(self):
+        """Load available Tesseract languages"""
+        try:
+            self.available_languages = pytesseract.get_languages()
+            logger.info(f"📚 Found {len(self.available_languages)} available languages")
+        except Exception as e:
+            logger.error(f"Error loading available languages: {e}")
+            self.available_languages = ['eng']
     
-    if total_chars == 0:
-        return 'unknown'
+    def is_language_available(self, lang_code):
+        """Check if a language is available"""
+        tesseract_code = self._get_tesseract_code_from_lang(lang_code)
+        return tesseract_code in self.available_languages
     
-    amharic_ratio = amharic_chars / total_chars
-    english_ratio = english_chars / total_chars
+    def _get_tesseract_code_from_lang(self, lang_code):
+        """Convert our language code to Tesseract code"""
+        mapping = {
+            'en': 'eng', 'eng': 'eng', 'english': 'eng',
+            'am': 'amh', 'amh': 'amh', 'amharic': 'amh',
+            'ar': 'ara', 'ara': 'ara', 'arabic': 'ara',
+            'zh': 'chi_sim', 'chi_sim': 'chi_sim', 'chinese': 'chi_sim',
+            'ja': 'jpn', 'jpn': 'jpn', 'japanese': 'jpn',
+            'ko': 'kor', 'kor': 'kor', 'korean': 'kor',
+            'es': 'spa', 'spa': 'spa', 'spanish': 'spa',
+            'fr': 'fra', 'fra': 'fra', 'french': 'fra',
+            'de': 'deu', 'deu': 'deu', 'german': 'deu',
+            'ru': 'rus', 'rus': 'rus', 'russian': 'rus'
+        }
+        return mapping.get(lang_code, 'eng')
     
-    # Determine primary language
-    if amharic_ratio > 0.3:
-        return 'amh'
-    elif english_ratio > 0.7:
-        return 'eng'
-    else:
-        return 'mixed'
-
-def get_optimal_ocr_config(language):
-    """Get optimal OCR configuration for specific language"""
-    configs = {
-        'amh': '--oem 1 --psm 6 -c preserve_interword_spaces=1',
-        'eng': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
-        'mixed': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
-        'unknown': '--oem 3 --psm 6 -c preserve_interword_spaces=1'
-    }
-    return configs.get(language, configs['unknown'])
-
-def validate_amharic_text(text):
-    """Validate if text contains meaningful Amharic content"""
-    if not text:
-        return False
+    async def extract_text_optimized(self, image_bytes, language=None):
+        """Optimized text extraction with performance improvements"""
+        start_time = time.time()
+        
+        try:
+            # Quick preprocessing for speed
+            processed_image = await asyncio.get_event_loop().run_in_executor(
+                thread_pool,
+                self.fast_preprocessing,
+                image_bytes
+            )
+            
+            # Fast language detection
+            detected_language = await self.fast_language_detection(processed_image)
+            logger.info(f"🔍 Detected language: {detected_language}")
+            
+            # Use optimized strategies for performance
+            if detected_language == 'am':
+                text = await self.optimized_amharic_ocr(processed_image)
+            else:
+                text = await self.optimized_english_ocr(processed_image)
+            
+            processing_time = time.time() - start_time
+            
+            if not text or len(text.strip()) < 2:
+                return "🔍 No readable text found. Please try a clearer image."
+            
+            # Fast text cleaning
+            cleaned_text = self.fast_clean_text(text)
+            
+            logger.info(f"✅ {detected_language.upper()} OCR completed in {processing_time:.2f}s")
+            return cleaned_text
+            
+        except Exception as e:
+            logger.error(f"OCR processing failed: {e}")
+            return "❌ OCR processing failed. Please try again with a different image."
     
-    # Count Amharic characters
-    amharic_chars = sum(1 for c in text if is_amharic_character(c))
-    total_chars = len(text.strip())
+    def fast_preprocessing(self, image_bytes):
+        """Fast preprocessing optimized for performance"""
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            
+            # Convert to grayscale quickly
+            if image.mode != 'L':
+                image = image.convert('L')
+            
+            # Resize large images for faster processing (keep aspect ratio)
+            max_size = 2000
+            if max(image.size) > max_size:
+                ratio = max_size / max(image.size)
+                new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+                image = image.resize(new_size, Image.Resampling.LANCZOS)
+                logger.info(f"📐 Resized image from {image.size} to {new_size}")
+            
+            # Quick contrast enhancement
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.3)
+            
+            return image
+            
+        except Exception as e:
+            logger.error(f"Preprocessing failed: {e}")
+            return Image.open(io.BytesIO(image_bytes)).convert('L')
     
-    if total_chars < 5:
-        return False
+    async def fast_language_detection(self, processed_image):
+        """Fast language detection focusing on common cases"""
+        try:
+            # Quick Amharic test
+            amh_text = await self.extract_with_tesseract(processed_image, 'amh', '--psm 6 --oem 1', timeout=10)
+            amh_chars = sum(1 for c in amh_text if '\u1200' <= c <= '\u137F')
+            
+            if amh_chars > 5:  # If we find several Amharic characters
+                return 'am'
+            else:
+                return 'en'  # Default to English for speed
+                
+        except Exception as e:
+            logger.warning(f"Fast language detection failed: {e}")
+            return 'en'
     
-    # At least 20% should be Amharic characters to be considered valid Amharic
-    return (amharic_chars / total_chars) > 0.2
-
-def validate_english_text(text):
-    """Validate if text contains meaningful English content"""
-    if not text:
-        return False
+    async def optimized_amharic_ocr(self, processed_image):
+        """Optimized Amharic OCR with best-performing strategies"""
+        # Use only the most effective strategies based on testing
+        strategies = [
+            ('amh', '--oem 1 --psm 6 -c preserve_interword_spaces=1'),
+            ('amh+eng', '--oem 1 --psm 6 -c preserve_interword_spaces=1'),
+            ('amh', '--oem 1 --psm 4 -c preserve_interword_spaces=1'),
+        ]
+        
+        best_text = ""
+        best_confidence = 0
+        
+        for lang, config in strategies:
+            try:
+                text = await self.extract_with_tesseract(processed_image, lang, config, timeout=30)
+                if text and text.strip():
+                    confidence = self._calculate_amharic_confidence(text)
+                    
+                    if confidence > best_confidence:
+                        best_text = text
+                        best_confidence = confidence
+                    
+                    # Early exit if we get good results
+                    if confidence > 0.5:
+                        logger.info(f"✅ High confidence Amharic text found with {lang}")
+                        break
+            except Exception as e:
+                continue
+        
+        # Fallback to English if Amharic results are poor
+        if best_confidence < 0.2:
+            english_text = await self.extract_with_tesseract(processed_image, 'eng', '--oem 3 --psm 6', timeout=20)
+            if english_text and english_text.strip():
+                logger.info("🔄 Falling back to English OCR")
+                return english_text
+        
+        return best_text
     
-    # Count English letters and common punctuation
-    english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-    total_chars = len(text.strip())
+    async def optimized_english_ocr(self, processed_image):
+        """Optimized English OCR"""
+        strategies = [
+            ('eng', '--oem 3 --psm 6'),
+            ('eng', '--oem 3 --psm 3'),
+        ]
+        
+        for lang, config in strategies:
+            try:
+                text = await self.extract_with_tesseract(processed_image, lang, config, timeout=20)
+                if text and text.strip():
+                    return text
+            except Exception as e:
+                continue
+        
+        return ""
     
-    if total_chars < 5:
-        return False
-    
-    # At least 60% should be English letters to be considered valid English
-    return (english_chars / total_chars) > 0.6
-
-# Language detection confidence thresholds
-CONFIDENCE_THRESHOLDS = {
-    'amh': 0.3,  # 30% Amharic characters
-    'eng': 0.6,  # 60% English characters
-    'mixed': 0.1  # 10% mixed content
-}
-
-def get_language_confidence(text, language):
-    """Calculate confidence level for detected language"""
-    if not text:
-        return 0.0
-    
-    total_chars = len(text.strip())
-    if total_chars == 0:
-        return 0.0
-    
-    if language == 'amh':
-        amharic_chars = sum(1 for c in text if is_amharic_character(c))
+    def _calculate_amharic_confidence(self, text):
+        """Fast Amharic confidence calculation"""
+        if not text:
+            return 0
+        
+        amharic_chars = sum(1 for c in text if '\u1200' <= c <= '\u137F')
+        total_chars = len(text)
+        
+        if total_chars == 0:
+            return 0
+        
         return amharic_chars / total_chars
-    elif language == 'eng':
-        english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-        return english_chars / total_chars
-    else:
-        return 0.5  # Default confidence for mixed/unknown
+    
+    def fast_clean_text(self, text):
+        """Fast text cleaning"""
+        if not text:
+            return ""
+        
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            cleaned_line = ' '.join(line.split())
+            if cleaned_line:
+                cleaned_lines.append(cleaned_line)
+        
+        return '\n'.join(cleaned_lines)
+    
+    async def extract_with_tesseract(self, image, lang, config, timeout=30):
+        """Extract text with Tesseract with timeout"""
+        loop = asyncio.get_event_loop()
+        try:
+            text = await asyncio.wait_for(
+                loop.run_in_executor(
+                    thread_pool,
+                    lambda: pytesseract.image_to_string(image, lang=lang, config=config)
+                ),
+                timeout=timeout
+            )
+            return text
+        except asyncio.TimeoutError:
+            logger.warning(f"⏰ Tesseract timeout for {lang}")
+            return ""
+        except Exception as e:
+            logger.error(f"Tesseract extraction failed for {lang}: {e}")
+            return ""
+
+# Global instance
+ocr_processor = OCRProcessor()
+
+class PerformanceMonitor:
+    def __init__(self):
+        self.request_times = []
+    
+    def record_request(self, processing_time):
+        self.request_times.append(processing_time)
+        # Keep only last 50 requests
+        if len(self.request_times) > 50:
+            self.request_times.pop(0)
+    
+    def get_stats(self):
+        if not self.request_times:
+            return "No requests yet"
+        avg_time = sum(self.request_times) / len(self.request_times)
+        return f"Average processing time: {avg_time:.2f}s"
+
+performance_monitor = PerformanceMonitor()
