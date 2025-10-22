@@ -1,297 +1,415 @@
-# utils/image_processing.py
-import asyncio
-import logging
-import time
-from PIL import Image, ImageEnhance, ImageFilter
-import io
+# app.py
 import os
-import pytesseract
+import logging
+import asyncio
+import signal
+import sys
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
-from ocr_engine.language_support import get_tesseract_code, get_amharic_config, is_amharic_character
+from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import Update
+from dotenv import load_dotenv
 
+# Configure logging for Railway with enhanced OCR logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
-thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ocr_")  # It is Reduced for better memory management
 
-class OCRProcessor:
-    def __init__(self):
-        self.setup_tesseract()
-        self.available_languages = []
-        self._load_available_languages()
-        self.performance_cache = {}  # Cache for performance optimization
-    
-    def setup_tesseract(self):
-        """Setup Tesseract with automatic path detection"""
-        try:
-            tesseract_path = self._find_tesseract()
-            if tesseract_path:
-                pytesseract.pytesseract.tesseract_cmd = tesseract_path
-                logger.info(f"✅ Tesseract found at: {tesseract_path}")
-            else:
-                logger.error("❌ Could not find Tesseract installation")
-                return False
-            
-            version = pytesseract.get_tesseract_version()
-            logger.info(f"✅ Tesseract v{version} initialized successfully")
-            
-            return True
-        except Exception as e:
-            logger.error(f"Tesseract initialization failed: {e}")
-            return False
-    
-    def _find_tesseract(self):
-        """Find Tesseract installation path"""
-        possible_paths = [
-            '/usr/bin/tesseract',
-            '/usr/local/bin/tesseract', 
-            '/bin/tesseract',
-            '/app/bin/tesseract'
-        ]
+# Signal handlers for graceful shutdown
+def signal_handler(signum, frame):
+    logger.info(f"📦 Received signal {signum}, shutting down gracefully...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+# Load environment variables
+load_dotenv()
+
+# Fallback values if environment variables are not set
+FALLBACK_VALUES = {
+    'BOT_TOKEN': '8327516444:AAGblijJShx3Uh9cWU7coADtUl_PnAeDZ5A',
+    'MONGODB_URI': 'mongodb+srv://telegram-bot-user:KJMPN6R7SctEtlZZ@pythoncluster.dufidzj.mongodb.net/telegram_ocr_bot?retryWrites=true&w=majority',
+    'SUPPORT_BOT': '@ImageToTextConverterSupportBot',
+    'CHANNEL': '@ImageToTextConverter',
+    'ADMIN_IDS': '417079598'
+}
+
+# Set fallback values if environment variables are missing
+for key, fallback_value in FALLBACK_VALUES.items():
+    if not os.getenv(key):
+        os.environ[key] = fallback_value
+        logger.warning(f"⚠️ Using fallback for {key}")
+
+# Import database with enhanced error handling
+try:
+    from database.mongodb import db
+    logger.info("✅ Database imported successfully")
+except ImportError as e:
+    logger.error(f"❌ Database import failed: {e}")
+    # Create a simple mock database
+    class MockDB:
+        def __init__(self):
+            self.is_mock = True
+            self.users_data = {}
+            self.requests_data = []
         
+        def get_user(self, user_id):
+            return self.users_data.get(user_id)
+        
+        def insert_user(self, user_data):
+            self.users_data[user_data['user_id']] = user_data
+            return True
+        
+        def update_user_settings(self, user_id, settings):
+            if user_id in self.users_data:
+                if 'settings' not in self.users_data[user_id]:
+                    self.users_data[user_id]['settings'] = {}
+                self.users_data[user_id]['settings'].update(settings)
+            return True
+        
+        def log_ocr_request(self, request_data):
+            self.requests_data.append(request_data)
+            return True
+        
+        def get_user_stats(self, user_id):
+            user_requests = [r for r in self.requests_data if r.get('user_id') == user_id]
+            return {
+                'total_requests': len(user_requests),
+                'recent_requests': user_requests[-5:][::-1]
+            }
+    
+    db = MockDB()
+    logger.info("✅ Using mock database")
+
+# Enhanced OCR imports with better error handling
+try:
+    # Import OCR processor early to catch initialization errors
+    from utils.image_processing import ocr_processor, performance_monitor
+    logger.info("✅ OCR processor imported successfully")
+    
+    # Import text formatter
+    from utils.text_formatter import TextFormatter
+    logger.info("✅ Text formatter imported successfully")
+    
+except ImportError as e:
+    logger.error(f"❌ OCR components import failed: {e}")
+    raise
+
+# Now import handlers with enhanced error handling
+try:
+    from handlers.start import handle_membership_check, force_check_membership, handle_start_callback
+    from handlers.help import help_command, handle_help_callback
+    from handlers.ocr import handle_image, handle_reformat, handle_ocr_callback
+    from handlers.menu import (
+        show_main_menu, show_settings_menu, show_statistics,
+        handle_convert_image, show_format_menu,
+        handle_format_change
+    )
+    
+    # Import enhanced menu handlers
+    from handlers.menu_enhanced import (
+        show_enhanced_main_menu, 
+        handle_quick_actions,
+        show_quick_settings,
+        show_quick_statistics,
+        show_quick_help,
+        get_main_menu_keyboard
+    )
+    
+    logger.info("✅ All handlers imported successfully")
+except ImportError as e:
+    logger.error(f"❌ Handler import failed: {e}")
+    # Create fallback handlers for critical functionality
+    async def fallback_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("🚀 Bot is starting... Please try again in a moment.")
+    
+    async def fallback_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("❓ Help system is initializing...")
+    
+    async def fallback_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("📸 Image processing is temporarily unavailable. Please try again later.")
+    
+    # Assign fallback handlers
+    help_command = fallback_help
+    handle_image = fallback_image
+    logger.warning("⚠️ Using fallback handlers due to import errors")
+
+# Use enhanced main menu as start command
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enhanced start command with menu"""
+    await show_enhanced_main_menu(update, context)
+
+async def check_railway_environment():
+    """Check if we're running on Railway and verify setup"""
+    is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
+    if is_railway:
+        logger.info("🚄 Running in Railway environment")
+        
+        # Verify Tesseract installation
         try:
             result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
             if result.returncode == 0:
-                found_path = result.stdout.strip()
-                if found_path and os.path.exists(found_path):
-                    return found_path
+                logger.info(f"✅ Tesseract found at: {result.stdout.strip()}")
+            else:
+                logger.error("❌ Tesseract not found in PATH on Railway")
+                
+            # Test Tesseract
+            version_result = subprocess.run(['tesseract', '--version'], capture_output=True, text=True)
+            if version_result.returncode == 0:
+                logger.info("✅ Tesseract is working on Railway")
+                logger.info(f"📄 Tesseract output: {version_result.stdout.splitlines()[0]}")
+            else:
+                logger.error(f"❌ Tesseract test failed: {version_result.stderr}")
+                
+        except Exception as e:
+            logger.error(f"❌ Railway Tesseract check failed: {e}")
+    
+    return is_railway
+
+async def diagnose_tesseract_setup():
+    """Diagnose Tesseract setup and available languages"""
+    try:
+        from utils.image_processing import ocr_processor
+        import pytesseract
+        
+        logger.info("🔧 Running Tesseract diagnostics...")
+        
+        # Check Tesseract version
+        version = pytesseract.get_tesseract_version()
+        logger.info(f"✅ Tesseract version: {version}")
+        
+        # Check available languages
+        logger.info(f"🌍 Available languages: {ocr_processor.available_languages}")
+        
+        # Check TESSDATA_PREFIX
+        tessdata_prefix = os.getenv('TESSDATA_PREFIX', 'Not set')
+        logger.info(f"📁 TESSDATA_PREFIX: {tessdata_prefix}")
+        
+        # Log language support status
+        supported_langs = ['en', 'am', 'ar', 'zh', 'ja', 'ko', 'es', 'fr', 'de', 'ru']
+        logger.info("🔤 Language Support Status:")
+        for lang in supported_langs:
+            status = "✅" if ocr_processor.is_language_available(lang) else "❌"
+            tess_code = ocr_processor._get_tesseract_code_from_lang(lang)
+            logger.info(f"   {status} {lang} - {tess_code}")
+        
+        # Log total available languages
+        total_available = len(ocr_processor.available_languages)
+        logger.info(f"📊 Total available languages: {total_available}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"❌ Tesseract diagnostics failed: {e}")
+        return False
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enhanced error handling with better logging"""
+    logger.error(f"Update {update} caused error {context.error}")
+    
+    # Log the full traceback for debugging
+    logger.error(f"Full error: {context.error}", exc_info=context.error)
+    
+    # Send user-friendly error message
+    try:
+        if update and update.effective_chat:
+            error_msg = (
+                "❌ An unexpected error occurred.\n\n"
+                "🔧 **Quick Fixes:**\n"
+                "• Try sending the image again\n"
+                "• Ensure the image is clear and focused\n"
+                "• Check your internet connection\n"
+                "• Try a smaller image size\n\n"
+                "If the problem persists, please contact support."
+            )
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=error_msg
+            )
+    except Exception as e:
+        logger.error(f"Failed to send error message: {e}")
+
+async def post_init(application: Application):
+    """Enhanced initialization after bot starts"""
+    logger.info("🔄 Running post-initialization checks...")
+    
+    # Check Railway environment first
+    await check_railway_environment()
+    
+    # Run Tesseract diagnostics
+    await diagnose_tesseract_setup()
+    
+    # Check OCR engine status
+    try:
+        ocr_status = "✅ OCR Engine Ready"
+        if hasattr(ocr_processor, 'engines'):
+            active_engines = list(ocr_processor.engines.keys())
+            ocr_status += f" | Engines: {active_engines}"
+        logger.info(ocr_status)
+    except Exception as e:
+        logger.error(f"❌ OCR Engine check failed: {e}")
+    
+    # Check database connection
+    try:
+        if hasattr(db, 'is_mock'):
+            if db.is_mock:
+                logger.warning("⚠️ Using mock database - data will not persist")
+            else:
+                logger.info("✅ Database connection active")
+        else:
+            logger.info("✅ Database connection active")
+    except Exception as e:
+        logger.error(f"❌ Database check failed: {e}")
+    
+    # Log available language count for user information
+    available_count = len(ocr_processor.available_languages)
+    logger.info(f"🌍 OCR Bot supports {available_count} languages")
+    
+    logger.info("🚀 Enhanced OCR Bot is ready!")
+
+async def post_stop(application: Application):
+    """Cleanup when bot stops"""
+    logger.info("🛑 Bot is shutting down...")
+    
+    # Cleanup OCR resources
+    try:
+        if hasattr(ocr_processor, 'thread_pool'):
+            ocr_processor.thread_pool.shutdown(wait=False)
+            logger.info("✅ OCR thread pool shutdown")
+    except Exception as e:
+        logger.error(f"❌ OCR cleanup failed: {e}")
+    
+    logger.info("👋 Bot shutdown complete")
+
+def main():
+    """Enhanced main function with better error handling"""
+    try:
+        # Get bot token
+        BOT_TOKEN = os.getenv('BOT_TOKEN')
+        
+        if not BOT_TOKEN:
+            logger.error("❌ BOT_TOKEN not found")
+            return
+        
+        logger.info(f"✅ BOT_TOKEN found: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
+        
+        # Railway-specific logging
+        logger.info("🚄 Starting Enhanced OCR Bot on Railway...")
+        logger.info("📊 Environment: PRODUCTION")
+        logger.info("🌍 Multi-language OCR Support")
+        
+        # Create application with enhanced settings
+        application = (
+            Application.builder()
+            .token(BOT_TOKEN)
+            .post_init(post_init)
+            .post_stop(post_stop)
+            .build()
+        )
+        
+        # Store database in bot_data
+        application.bot_data['db'] = db
+        logger.info("✅ Database connected to bot data")
+        
+        # Enhanced handler registration with menu support
+        handlers = [
+            CommandHandler("start", start_command),
+            CommandHandler("help", help_command),
+            CommandHandler("settings", show_quick_settings),
+            CommandHandler("stats", show_quick_statistics),
+            CommandHandler("menu", show_enhanced_main_menu),
+            CommandHandler("check", force_check_membership),
+            
+            MessageHandler(filters.PHOTO, handle_image),
+            MessageHandler(filters.TEXT & filters.Regex('^(📸 Convert Image|⚙️ Settings|📊 Statistics|❓ Help|🔄 Restart Bot)$'), handle_quick_actions),
+        ]
+        
+        for handler in handlers:
+            application.add_handler(handler)
+        
+        # Enhanced callback handlers with better error handling
+        callback_patterns = [
+            ("check_membership", handle_membership_check),
+            ("restart_bot", handle_start_callback),
+            ("main_menu", show_main_menu),
+            ("settings", show_settings_menu),
+            ("statistics", show_statistics),
+            ("help", handle_help_callback),
+            ("convert_image", handle_convert_image),
+            ("change_format", show_format_menu),
+            ("set_format_", handle_format_change),
+            ("contact_support", handle_help_callback),
+            ("reformat_", handle_reformat),
+            # Enhanced menu callbacks
+            ("settings_format", show_format_menu),
+            ("settings_language", show_settings_menu),
+            ("settings_performance", show_settings_menu),
+            ("help_usage", help_command),
+            ("help_languages", help_command),
+            ("help_troubleshoot", help_command),
+            ("help_support", handle_help_callback),
+        ]
+        
+        for pattern, handler in callback_patterns:
+            application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
+        
+        # Add OCR-specific callback handler
+        application.add_handler(CallbackQueryHandler(handle_ocr_callback, pattern="^ocr_"))
+        
+        # Add error handler
+        application.add_error_handler(error_handler)
+        
+        logger.info("✅ All handlers registered successfully")
+        logger.info("🔧 Enhanced Features:")
+        logger.info("   • Smart language detection")
+        logger.info("   • Multi-strategy OCR for blurry images")
+        logger.info("   • Advanced Amharic language support")
+        logger.info("   • Enhanced text formatting")
+        logger.info("   • Better error handling and user feedback")
+        logger.info("   • Quick-access menu system")
+        logger.info("   • Performance optimizations")
+        
+        # Start the bot with enhanced settings
+        logger.info("🚀 Starting enhanced bot polling...")
+        
+        application.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES,
+            close_loop=False
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Bot crashed: {e}")
+        logger.error("💥 Full crash details:", exc_info=True)
+        
+        # Attempt graceful shutdown
+        try:
+            if 'application' in locals():
+                application.stop()
+                application.shutdown()
         except:
             pass
         
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        
-        return None
-    
-    def _load_available_languages(self):
-        """Load available Tesseract languages"""
-        try:
-            self.available_languages = pytesseract.get_languages()
-            logger.info(f"📚 Found {len(self.available_languages)} available languages")
-        except Exception as e:
-            logger.error(f"Error loading available languages: {e}")
-            self.available_languages = ['eng']
-    
-    def is_language_available(self, lang_code):
-        """Check if a language is available"""
-        tesseract_code = self._get_tesseract_code_from_lang(lang_code)
-        return tesseract_code in self.available_languages
-    
-    def _get_tesseract_code_from_lang(self, lang_code):
-        """Convert our language code to Tesseract code"""
-        mapping = {
-            'en': 'eng', 'eng': 'eng', 'english': 'eng',
-            'am': 'amh', 'amh': 'amh', 'amharic': 'amh',
-            'ar': 'ara', 'ara': 'ara', 'arabic': 'ara',
-            'zh': 'chi_sim', 'chi_sim': 'chi_sim', 'chinese': 'chi_sim',
-            'ja': 'jpn', 'jpn': 'jpn', 'japanese': 'jpn',
-            'ko': 'kor', 'kor': 'kor', 'korean': 'kor',
-            'es': 'spa', 'spa': 'spa', 'spanish': 'spa',
-            'fr': 'fra', 'fra': 'fra', 'french': 'fra',
-            'de': 'deu', 'deu': 'deu', 'german': 'deu',
-            'ru': 'rus', 'rus': 'rus', 'russian': 'rus'
-        }
-        return mapping.get(lang_code, 'eng')
-    
-    async def extract_text_optimized(self, image_bytes, language=None):
-        """Optimized text extraction with performance improvements"""
-        start_time = time.time()
-        
-        try:
-            # Quick preprocessing for speed
-            processed_image = await asyncio.get_event_loop().run_in_executor(
-                thread_pool,
-                self.fast_preprocessing,
-                image_bytes
-            )
-            
-            # Fast language detection
-            detected_language = await self.fast_language_detection(processed_image)
-            logger.info(f"🔍 Detected language: {detected_language}")
-            
-            # Use optimized strategies for performance
-            if detected_language == 'am':
-                text = await self.optimized_amharic_ocr(processed_image)
-            else:
-                text = await self.optimized_english_ocr(processed_image)
-            
-            processing_time = time.time() - start_time
-            
-            if not text or len(text.strip()) < 2:
-                return "🔍 No readable text found. Please try a clearer image."
-            
-            # Fast text cleaning
-            cleaned_text = self.fast_clean_text(text)
-            
-            logger.info(f"✅ {detected_language.upper()} OCR completed in {processing_time:.2f}s")
-            return cleaned_text
-            
-        except Exception as e:
-            logger.error(f"OCR processing failed: {e}")
-            return "❌ OCR processing failed. Please try again with a different image."
-    
-    def fast_preprocessing(self, image_bytes):
-        """Fast preprocessing optimized for performance"""
-        try:
-            image = Image.open(io.BytesIO(image_bytes))
-            
-            # Convert to grayscale quickly
-            if image.mode != 'L':
-                image = image.convert('L')
-            
-            # Resize large images for faster processing (keep aspect ratio)
-            max_size = 2000
-            if max(image.size) > max_size:
-                ratio = max_size / max(image.size)
-                new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
-                image = image.resize(new_size, Image.Resampling.LANCZOS)
-                logger.info(f"📐 Resized image from {image.size} to {new_size}")
-            
-            # Quick contrast enhancement
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(1.3)
-            
-            return image
-            
-        except Exception as e:
-            logger.error(f"Preprocessing failed: {e}")
-            return Image.open(io.BytesIO(image_bytes)).convert('L')
-    
-    async def fast_language_detection(self, processed_image):
-        """Fast language detection focusing on common cases"""
-        try:
-            # Quick Amharic test
-            amh_text = await self.extract_with_tesseract(processed_image, 'amh', '--psm 6 --oem 1', timeout=10)
-            amh_chars = sum(1 for c in amh_text if '\u1200' <= c <= '\u137F')
-            
-            if amh_chars > 5:  # If we find several Amharic characters
-                return 'am'
-            else:
-                return 'en'  # Default to English for speed
-                
-        except Exception as e:
-            logger.warning(f"Fast language detection failed: {e}")
-            return 'en'
-    
-    async def optimized_amharic_ocr(self, processed_image):
-        """Optimized Amharic OCR with best-performing strategies"""
-        # Use only the most effective strategies based on testing
-        strategies = [
-            ('amh', '--oem 1 --psm 6 -c preserve_interword_spaces=1'),
-            ('amh+eng', '--oem 1 --psm 6 -c preserve_interword_spaces=1'),
-            ('amh', '--oem 1 --psm 4 -c preserve_interword_spaces=1'),
-        ]
-        
-        best_text = ""
-        best_confidence = 0
-        
-        for lang, config in strategies:
-            try:
-                text = await self.extract_with_tesseract(processed_image, lang, config, timeout=30)
-                if text and text.strip():
-                    confidence = self._calculate_amharic_confidence(text)
-                    
-                    if confidence > best_confidence:
-                        best_text = text
-                        best_confidence = confidence
-                    
-                    # Early exit if we get good results
-                    if confidence > 0.5:
-                        logger.info(f"✅ High confidence Amharic text found with {lang}")
-                        break
-            except Exception as e:
-                continue
-        
-        # Fallback to English if Amharic results are poor
-        if best_confidence < 0.2:
-            english_text = await self.extract_with_tesseract(processed_image, 'eng', '--oem 3 --psm 6', timeout=20)
-            if english_text and english_text.strip():
-                logger.info("🔄 Falling back to English OCR")
-                return english_text
-        
-        return best_text
-    
-    async def optimized_english_ocr(self, processed_image):
-        """Optimized English OCR"""
-        strategies = [
-            ('eng', '--oem 3 --psm 6'),
-            ('eng', '--oem 3 --psm 3'),
-        ]
-        
-        for lang, config in strategies:
-            try:
-                text = await self.extract_with_tesseract(processed_image, lang, config, timeout=20)
-                if text and text.strip():
-                    return text
-            except Exception as e:
-                continue
-        
-        return ""
-    
-    def _calculate_amharic_confidence(self, text):
-        """Fast Amharic confidence calculation"""
-        if not text:
-            return 0
-        
-        amharic_chars = sum(1 for c in text if '\u1200' <= c <= '\u137F')
-        total_chars = len(text)
-        
-        if total_chars == 0:
-            return 0
-        
-        return amharic_chars / total_chars
-    
-    def fast_clean_text(self, text):
-        """Fast text cleaning"""
-        if not text:
-            return ""
-        
-        lines = text.split('\n')
-        cleaned_lines = []
-        
-        for line in lines:
-            cleaned_line = ' '.join(line.split())
-            if cleaned_line:
-                cleaned_lines.append(cleaned_line)
-        
-        return '\n'.join(cleaned_lines)
-    
-    async def extract_with_tesseract(self, image, lang, config, timeout=30):
-        """Extract text with Tesseract with timeout"""
-        loop = asyncio.get_event_loop()
-        try:
-            text = await asyncio.wait_for(
-                loop.run_in_executor(
-                    thread_pool,
-                    lambda: pytesseract.image_to_string(image, lang=lang, config=config)
-                ),
-                timeout=timeout
-            )
-            return text
-        except asyncio.TimeoutError:
-            logger.warning(f"⏰ Tesseract timeout for {lang}")
-            return ""
-        except Exception as e:
-            logger.error(f"Tesseract extraction failed for {lang}: {e}")
-            return ""
+        # Suggest solutions based on error type
+        if "token" in str(e).lower():
+            logger.error("🔑 BOT_TOKEN might be invalid. Please check your environment variables.")
+        elif "network" in str(e).lower() or "connection" in str(e).lower():
+            logger.error("🌐 Network connection issue. Please check your internet connection.")
+        elif "tesseract" in str(e).lower():
+            logger.error("🔤 Tesseract OCR issue. Please check if Tesseract is installed correctly.")
+        else:
+            logger.error("💡 Check the logs above for specific error details.")
 
-# Global instance
-ocr_processor = OCRProcessor()
-
-class PerformanceMonitor:
-    def __init__(self):
-        self.request_times = []
-    
-    def record_request(self, processing_time):
-        self.request_times.append(processing_time)
-        # Keep only last 50 requests
-        if len(self.request_times) > 50:
-            self.request_times.pop(0)
-    
-    def get_stats(self):
-        if not self.request_times:
-            return "No requests yet"
-        avg_time = sum(self.request_times) / len(self.request_times)
-        return f"Average processing time: {avg_time:.2f}s"
-
-performance_monitor = PerformanceMonitor()
+if __name__ == "__main__":
+    # Enhanced startup with better resource management
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("👋 Bot stopped by user")
+    except Exception as e:
+        logger.error(f"💥 Fatal error during startup: {e}")
+        logger.error("Stack trace:", exc_info=True)
