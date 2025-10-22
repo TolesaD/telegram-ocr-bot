@@ -3,7 +3,16 @@ FROM python:3.9-slim
 # Install system dependencies including Tesseract
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
-    tesseract-ocr-all \
+    tesseract-ocr-eng \
+    tesseract-ocr-amh \
+    tesseract-ocr-ara \
+    tesseract-ocr-fra \
+    tesseract-ocr-spa \
+    tesseract-ocr-deu \
+    tesseract-ocr-rus \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-jpn \
+    tesseract-ocr-kor \
     libtesseract-dev \
     libleptonica-dev \
     pkg-config \
