@@ -5,7 +5,7 @@ It is a powerful Telegram bot that converts images to text using OCR technology 
 ## Features
 
 - 📷 Image to text conversion using Tesseract OCR
-- 🌐 Multi-language support (English available, more can be added)
+- 🌐 Multi-language support (English available, Amharic also available more can be added)
 - 📝 Multiple text formats: Plain Text, Markdown, HTML
 - 💾 User settings and statistics
 - 🎯 User-friendly menu interface
