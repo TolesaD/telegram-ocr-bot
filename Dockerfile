@@ -5,7 +5,6 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
     tesseract-ocr-amh \
-    # European languages
     tesseract-ocr-ara \
     tesseract-ocr-fra \
     tesseract-ocr-spa \
@@ -26,7 +25,6 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-bul \
     tesseract-ocr-hrv \
     tesseract-ocr-srp \
-    # Asian languages
     tesseract-ocr-chi-sim \
     tesseract-ocr-chi-tra \
     tesseract-ocr-jpn \
@@ -39,13 +37,11 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-mal \
     tesseract-ocr-tha \
     tesseract-ocr-vie \
-    # Middle Eastern & African languages
     tesseract-ocr-heb \
     tesseract-ocr-fas \
     tesseract-ocr-urd \
     tesseract-ocr-tur \
     tesseract-ocr-swa \
-    # Additional important languages
     tesseract-ocr-ukr \
     tesseract-ocr-cat \
     tesseract-ocr-eus \
@@ -66,22 +62,21 @@ RUN apt-get update && apt-get install -y \
 # Download additional language packs that might not be in the package manager
 RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
     cd /usr/share/tesseract-ocr/5/tessdata && \
-    # Download essential additional language packs
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tik.traineddata && \  # Tigrinya
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/snd.traineddata && \  # Sindhi
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kur.traineddata && \  # Kurdish
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/aze.traineddata && \  # Azerbaijani
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kaz.traineddata && \  # Kazakh
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/uzb.traineddata && \  # Uzbek
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tgk.traineddata && \  # Tajik
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kir.traineddata && \  # Kyrgyz
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tir.traineddata && \  # Tigre
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/som.traineddata && \  # Somali
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/yor.traineddata && \  # Yoruba
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/ibo.traineddata && \  # Igbo
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/hau.traineddata && \  # Hausa
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/zul.traineddata && \  # Zulu
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/xho.traineddata && \  # Xhosa
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tik.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/snd.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kur.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/aze.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kaz.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/uzb.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tgk.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kir.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tir.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/som.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/yor.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/ibo.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/hau.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/zul.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/xho.traineddata && \
     echo "✅ Additional language packs downloaded"
 
 # Set working directory
