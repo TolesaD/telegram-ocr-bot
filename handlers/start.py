@@ -20,7 +20,7 @@ def get_main_keyboard():
 def get_channel_keyboard():
     """Get channel join keyboard"""
     keyboard = [
-        [InlineKeyboardButton("📢 Join Announcement Channel", url=f"https://t.me/{config.CHANNEL_USERNAME}")],
+        [InlineKeyboardButton("📢 Join Announcement Channel", url=f"https://t.me/{config.CHANNEL_USERNAME.replace('@', '')}")],
         [InlineKeyboardButton("✅ I've Joined", callback_data="check_membership")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -136,8 +136,8 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Get database from bot_data
     db = context.bot_data.get('db')
     
-    # Save user data
-    if db:
+    # Save user data - only if it's not a mock database
+    if db and not getattr(db, 'is_mock', False):
         try:
             user_data = {
                 'user_id': user.id,
@@ -177,21 +177,32 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         from app import get_reply_keyboard
         reply_markup = get_reply_keyboard()
     except ImportError:
+        from app import get_main_keyboard
         reply_markup = get_main_keyboard()
     
     # Send welcome message
-    if from_callback:
-        await update.callback_query.edit_message_text(
-            welcome_text,
-            parse_mode='Markdown',
-            reply_markup=reply_markup
-        )
-    else:
-        await update.effective_message.reply_text(
-            welcome_text,
-            parse_mode='Markdown',
-            reply_markup=reply_markup
-        )
+    try:
+        if from_callback:
+            await update.callback_query.edit_message_text(
+                welcome_text,
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+        else:
+            await update.effective_message.reply_text(
+                welcome_text,
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+    except Exception as e:
+        logger.error(f"Error sending welcome message: {e}")
+        # Fallback: send new message if edit fails
+        if from_callback:
+            await update.callback_query.message.reply_text(
+                welcome_text,
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
 
 async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Force check channel membership"""

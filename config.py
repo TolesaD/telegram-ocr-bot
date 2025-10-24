@@ -4,8 +4,10 @@ import os
 # Bot Configuration
 BOT_TOKEN = os.getenv('BOT_TOKEN', '8327516444:AAGblijJShx3Uh9cWU7coADtUl_PnAeDZ5A')
 SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConverterSupportBot')
-CHANNEL_USERNAME = os.getenv('CHANNEL', '@ImageToTextConverter')
-ANNOUNCEMENT_CHANNEL = os.getenv('CHANNEL', '@ImageToTextConverter')  # Use the same for now
+
+# Channel Configuration - FIXED
+CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', 'ImageToTextConverter')  # Remove @ symbol
+ANNOUNCEMENT_CHANNEL = f"@{CHANNEL_USERNAME}"  # Add @ here for the channel ID
 ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '417079598').split(',')]
 
 # OCR Configuration

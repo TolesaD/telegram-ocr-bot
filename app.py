@@ -39,20 +39,30 @@ for key, fallback_value in FALLBACK_VALUES.items():
         os.environ[key] = fallback_value
         logger.warning(f"Using fallback for {key}")
 
-# Import database - UPDATED SECTION
+# Import database - UPDATED FOR POSTGRESQL
 try:
     # Try PostgreSQL first if DATABASE_URL is available
     if os.environ.get('DATABASE_URL'):
-        from database.postgres_db import PostgresDatabase
-        db = PostgresDatabase()
-        logger.info("✅ PostgreSQL database imported")
+        try:
+            from database.postgres_db import PostgresDatabase
+            db = PostgresDatabase()
+            logger.info("✅ PostgreSQL database imported")
+        except ImportError as e:
+            logger.error(f"PostgreSQL import failed: {e}")
+            raise
     else:
-        # Fallback to SQLite
-        from database.sqlite_db import SQLiteDatabase
-        db = SQLiteDatabase()
-        logger.info("✅ SQLite database imported")
-except ImportError as e:
+        # Fallback to SQLite for local development
+        try:
+            from database.sqlite_db import SQLiteDatabase
+            db = SQLiteDatabase()
+            logger.info("✅ SQLite database imported (local development)")
+        except ImportError as e:
+            logger.error(f"SQLite import failed: {e}")
+            raise
+
+except Exception as e:
     logger.error(f"Database import failed: {e}")
+    # Fallback to mock database
     class MockDB:
         def __init__(self): 
             self.is_mock = True
@@ -87,7 +97,7 @@ except ImportError as e:
             }
     
     db = MockDB()
-    logger.info("Using mock database")
+    logger.info("Using mock database as fallback")
 
 # Import OCR
 try:
