@@ -1,32 +1,24 @@
 # config.py
 import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Bot Configuration
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8327516444:AAGblijJShx3Uh9cWU7coADtUl_PnAeDZ5A')
+SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConverterSupportBot')
+CHANNEL_USERNAME = os.getenv('CHANNEL', '@ImageToTextConverter')
+ANNOUNCEMENT_CHANNEL = os.getenv('CHANNEL', '@ImageToTextConverter')  # Use the same for now
+ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '417079598').split(',')]
 
-# Performance Settings
-MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB for Railway
-PROCESSING_TIMEOUT = 45  # seconds
+# OCR Configuration
+MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB
+PROCESSING_TIMEOUT = 120  # seconds
 
-# Text Formatting Options
+# Format Options
 FORMAT_OPTIONS = ['plain', 'html']
 
-# Support Bot
-SUPPORT_BOT = os.getenv('SUPPORT_BOT', '@ImageToTextConvertorSupportBot')
+# Database Configuration
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///ocr_bot.db')
 
-# Channel Configuration
-ANNOUNCEMENT_CHANNEL = "@ImageToTextConverter"
-CHANNEL_USERNAME = "ImageToTextConverter"
-
-# Admin User IDs
-admin_ids_str = os.getenv('ADMIN_IDS', '')
-ADMIN_IDS = []
-if admin_ids_str:
-    for admin_id in admin_ids_str.split(','):
-        admin_id = admin_id.strip()
-        if admin_id and admin_id.isdigit():
-            ADMIN_IDS.append(int(admin_id))
-
-# Railway environment
-IS_RAILWAY = os.getenv('RAILWAY_ENVIRONMENT') is not None
+# Feature Flags
+ENABLE_AMHARIC = True
+ENABLE_MULTILINGUAL = True
+ENABLE_STATISTICS = True

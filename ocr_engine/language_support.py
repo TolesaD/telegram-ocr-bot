@@ -112,6 +112,10 @@ def get_tesseract_code(lang_code):
     # Ultimate fallback
     return 'eng'
 
+def get_amharic_config() -> str:
+    """Get optimized Tesseract config for Amharic"""
+    return '--oem 1 --psm 6 -c preserve_interword_spaces=1'
+
 def get_ocr_config(language, script_family, image_size=None):
     """Get optimized OCR configuration for language and script"""
     base_config = "--oem 3 --dpi 300 -c tessedit_do_invert=0"

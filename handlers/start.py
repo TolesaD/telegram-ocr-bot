@@ -1,23 +1,37 @@
 # handlers/start.py
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
-from handlers.menu import show_main_menu
 import config
 import logging
 
 logger = logging.getLogger(__name__)
 
+def get_main_keyboard():
+    """Get the main inline keyboard"""
+    keyboard = [
+        [InlineKeyboardButton("📸 Convert Image", callback_data="convert_image")],
+        [InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
+        [InlineKeyboardButton("📊 Statistics", callback_data="statistics")],
+        [InlineKeyboardButton("❓ Help", callback_data="help")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_channel_keyboard():
+    """Get channel join keyboard"""
+    keyboard = [
+        [InlineKeyboardButton("📢 Join Announcement Channel", url=f"https://t.me/{config.CHANNEL_USERNAME}")],
+        [InlineKeyboardButton("✅ I've Joined", callback_data="check_membership")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced /start command with better format explanation and Amharic support"""
+    """Start command with channel requirement"""
     user = update.effective_user
     
     logger.info(f"🚀 /start from user {user.id} (@{user.username})")
     
-    # Get database from bot_data
-    db = context.bot_data.get('db')
-    
-    # Check channel membership
+    # Check channel membership first
     has_joined = await check_channel_membership(update, context, user.id)
     
     if not has_joined:
@@ -25,10 +39,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_channel_requirement(update, context)
         return
     
-    # User has joined, proceed
+    # User has joined, proceed to main menu
     logger.info(f"✅ User {user.id} verified, proceeding")
-    from_callback = update.callback_query is not None
-    await process_user_start(update, context, user, db, from_callback=from_callback)
+    await process_user_start(update, context, user)
 
 async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
     """Check if user is a member of the announcement channel"""
@@ -46,7 +59,7 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
             logger.info(f"✅ User {user_id} is a channel member")
             return True
         else:
-            logger.info(f"❌ User {user_id} not in channel (status: {chat_member.status})")
+            logger.info(f"❌ User {user.id} not in channel (status: {chat_member.status})")
             return False
         
     except Exception as e:
@@ -57,27 +70,18 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
             return False
         except Exception as e2:
             logger.error(f"🚨 Bot cannot access channel {config.ANNOUNCEMENT_CHANNEL}: {e2}")
-            await update.effective_message.reply_text(
-                f"❌ Error: Bot cannot access the channel @{config.CHANNEL_USERNAME}. "
-                "Please ensure the bot is an admin in the channel and try again."
-            )
-            return False
+            # If bot can't access channel, allow user to proceed
+            return True
 
 async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show channel join requirement"""
-    keyboard = [
-        [InlineKeyboardButton("📢 Join Announcement Channel", url=f"https://t.me/{config.CHANNEL_USERNAME}")],
-        [InlineKeyboardButton("✅ I've Joined", callback_data="check_membership")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     message_text = (
         "👋 *Welcome to Enhanced OCR Bot!* 📸\n\n"
         "📢 *Join Our Channel First*\n\n"
         "Please join our channel to use this bot:\n"
         "• 🚀 Get updates and new features\n"
         "• 💡 Learn usage tips\n"
-        "• 🌍 Amharic language support\n"
+        "• 🌍 70+ language support\n"
         "• 🔧 Stay informed about maintenance\n\n"
         "*Steps:*\n"
         "1. Click 'Join Announcement Channel'\n"
@@ -90,13 +94,13 @@ async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT
         if update.callback_query:
             await update.callback_query.edit_message_text(
                 message_text,
-                reply_markup=reply_markup,
+                reply_markup=get_channel_keyboard(),
                 parse_mode='Markdown'
             )
         else:
             await update.effective_message.reply_text(
                 message_text,
-                reply_markup=reply_markup,
+                reply_markup=get_channel_keyboard(),
                 parse_mode='Markdown'
             )
     except Exception as e:
@@ -114,14 +118,12 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"🔄 User {user.id} checking membership...")
     
-    db = context.bot_data.get('db')
-    
     has_joined = await check_channel_membership(update, context, user.id)
     
     if has_joined:
         logger.info(f"🎉 User {user.id} verified successfully")
         await query.edit_message_text("✅ Thank you for joining! Setting up your account...")
-        await process_user_start(update, context, user, db, from_callback=True)
+        await process_user_start(update, context, user, from_callback=True)
     else:
         logger.warning(f"❌ User {user.id} not verified")
         await query.answer(
@@ -129,106 +131,67 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
             show_alert=True
         )
 
-async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE, user, db=None, from_callback=False):
-    """Enhanced user start processing with better format explanation"""
-    try:
-        # Initialize user with plain text as default format
-        user_data = {
-            'user_id': user.id,
-            'username': user.username,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'joined_channel': True,
-            'channel_join_date': datetime.now(),
-            'created_at': datetime.now(),
-            'updated_at': datetime.now(),
-            'settings': {
-                'text_format': 'plain',  # Default to plain text
-                'language_preference': 'auto',  # Auto-detect language
-                'updated_at': datetime.now()
-            }
-        }
-        
-        if db:
-            try:
-                # Check if user exists, update if they do
-                existing_user = db.get_user(user.id)
-                if existing_user:
-                    # Update existing user's last active time
-                    db.update_user_settings(user.id, {'last_active': datetime.now()})
-                    logger.info(f"✅ Updated existing user {user.id}")
-                else:
-                    # Insert new user
-                    result = db.insert_user(user_data)
-                    logger.info(f"✅ New user {user.id} saved to database")
-            except Exception as e:
-                logger.error(f"❌ Error saving user {user.id}: {e}")
-        
-    except Exception as e:
-        logger.error(f"❌ Error processing user {user.id}: {e}")
+async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE, user, from_callback=False):
+    """Process user after channel verification"""
+    # Get database from bot_data
+    db = context.bot_data.get('db')
     
-    # Enhanced welcome message with clear format explanation
+    # Save user data
+    if db:
+        try:
+            user_data = {
+                'user_id': user.id,
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'joined_channel': True,
+                'channel_join_date': datetime.now(),
+                'settings': {'text_format': 'plain'}
+            }
+            db.insert_user(user_data)
+            logger.info(f"✅ User {user.id} saved to database")
+        except Exception as e:
+            logger.error(f"❌ Error saving user {user.id}: {e}")
+    
     welcome_text = (
         f"🎉 *Welcome {user.first_name}!* 🌍\n\n"
-        "🤖 *Enhanced OCR Bot with Amharic Support*\n\n"
-        "✨ *Enhanced Features:*\n"
+        "🤖 *Enhanced OCR Bot with 70+ Language Support*\n\n"
+        "✨ *Features:*\n"
         "• 🚀 Advanced text extraction\n"
-        "• 🌍 **Amharic language support**\n"
+        "• 🌍 **70+ languages supported**\n"
         "• 📸 Blurry image processing\n"
-        "• 💬 **Default: Plain Text** (clean & readable)\n"
-        "• 📋 **HTML Format** (copy-friendly)\n"
-        "• 🔤 Auto language detection\n"
-        "• 💾 Your preferences saved\n\n"
+        "• 💬 **Plain Text & HTML formats**\n"
+        "• 🔤 Auto language detection\n\n"
         "📸 *How to use:*\n"
         "1. Send me any image with text\n"
-        "2. I'll extract and format the text\n"
-        "3. Choose between formats:\n"
-        "   • 📄 **Plain Text** (default, best for reading)\n"
-        "   • 🌐 **HTML** (preserves formatting, easy to copy)\n\n"
-        "🌍 *Amharic Support:*\n"
-        "• Send Amharic text images\n"
-        "• Automatic script detection\n"
-        "• Optimized for Ethiopic characters\n\n"
+        "2. I'll extract and format the text automatically\n\n"
         "💡 *For best results:*\n"
         "• Clear, well-lit images\n"
         "• Focused, non-blurry text\n"
         "• High contrast\n"
-        "• Horizontal text alignment\n\n"
-        "Use the menu below or the pinned message to explore! 🎯"
+        "• Horizontal text alignment"
     )
     
-    if db and hasattr(db, 'is_mock') and db.is_mock:
-        welcome_text += "\n\n⚠️ *Note:* Using temporary storage (data resets on restart)"
-    else:
-        welcome_text += "\n\n💾 *Storage:* Your preferences are saved permanently"
+    # Import reply keyboard from app
+    try:
+        from app import get_reply_keyboard
+        reply_markup = get_reply_keyboard()
+    except ImportError:
+        reply_markup = get_main_keyboard()
     
     # Send welcome message
     if from_callback:
-        await update.callback_query.edit_message_text(welcome_text, parse_mode='Markdown')
+        await update.callback_query.edit_message_text(
+            welcome_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
     else:
-        await update.effective_message.reply_text(welcome_text, parse_mode='Markdown')
-    
-    # Enhanced persistent keyboard with better labels
-    keyboard = [
-        ['📸 Convert Image', '⚙️ Settings'],
-        ['📊 Statistics', '❓ Help'],
-    ]
-    reply_markup = ReplyKeyboardMarkup(
-        keyboard,
-        resize_keyboard=True,
-        is_persistent=True,
-        one_time_keyboard=False,
-        input_field_placeholder='Choose an option or send an image...'
-    )
-    
-    await update.effective_message.reply_text(
-        "📱 *Use the menu below:*\n• Send images directly\n• Or use buttons to navigate",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-    
-    # Show main menu
-    await show_main_menu(update, context)
+        await update.effective_message.reply_text(
+            welcome_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
 
 async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Force check channel membership"""
@@ -241,7 +204,7 @@ async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_T
         await update.effective_message.reply_text(
             "✅ *Channel Membership Verified!*\n\n"
             "You are a confirmed member. Thank you! 🎉\n\n"
-            "You can now use all features including Amharic text extraction.",
+            "You can now use all features including 70+ language text extraction.",
             parse_mode='Markdown'
         )
     else:
@@ -261,38 +224,3 @@ async def handle_start_callback(update: Update, context: ContextTypes.DEFAULT_TY
     elif query.data == "restart_bot":
         await query.answer("🔄 Restarting bot...")
         await start_command(update, context)
-
-def get_user_settings(db, user_id):
-    """Get user settings with safe defaults"""
-    try:
-        if db and hasattr(db, 'get_user'):
-            user = db.get_user(user_id)
-            if user and 'settings' in user:
-                return user['settings']
-    except Exception as e:
-        logger.error(f"Error getting settings for user {user_id}: {e}")
-    
-    # Return safe defaults
-    return {
-        'text_format': 'plain',  # Default to plain text
-        'language_preference': 'auto',
-        'updated_at': datetime.now()
-    }
-
-def update_user_settings(db, user_id, settings_update):
-    """Update user settings safely"""
-    try:
-        if db and hasattr(db, 'update_user_settings'):
-            # Get current settings first
-            current_settings = get_user_settings(db, user_id)
-            # Merge with updates
-            updated_settings = {**current_settings, **settings_update, 'updated_at': datetime.now()}
-            # Save to database
-            success = db.update_user_settings(user_id, updated_settings)
-            if success:
-                logger.info(f"✅ Updated settings for user {user_id}: {settings_update}")
-                return True
-    except Exception as e:
-        logger.error(f"❌ Error updating settings for user {user_id}: {e}")
-    
-    return False
