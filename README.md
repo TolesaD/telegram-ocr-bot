@@ -1,6 +1,6 @@
 # Telegram Image-to-Text Converter Bot
 
-It is a powerful Telegram bot that converts images to text using OCR technology with multi-language support and various text formatting options.
+Image-to-Text Converter Bot is a powerful Telegram bot that converts images to text using OCR technology with multi-language support and various text formatting options.
 
 ## Features
 
