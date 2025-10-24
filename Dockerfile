@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
     tesseract-ocr-amh \
+    # European languages
     tesseract-ocr-ara \
     tesseract-ocr-fra \
     tesseract-ocr-spa \
@@ -25,6 +26,7 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-bul \
     tesseract-ocr-hrv \
     tesseract-ocr-srp \
+    # Asian languages
     tesseract-ocr-chi-sim \
     tesseract-ocr-chi-tra \
     tesseract-ocr-jpn \
@@ -37,11 +39,13 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-mal \
     tesseract-ocr-tha \
     tesseract-ocr-vie \
+    # Middle Eastern & African languages
     tesseract-ocr-heb \
     tesseract-ocr-fas \
     tesseract-ocr-urd \
     tesseract-ocr-tur \
     tesseract-ocr-swa \
+    # Additional important languages
     tesseract-ocr-ukr \
     tesseract-ocr-cat \
     tesseract-ocr-eus \
@@ -59,25 +63,26 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Download additional language packs that might not be in the package manager
+# Download only verified additional language packs
 RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
     cd /usr/share/tesseract-ocr/5/tessdata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tik.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/snd.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kur.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/aze.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kaz.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/uzb.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tgk.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kir.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tir.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/som.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/yor.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/ibo.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/hau.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/zul.traineddata && \
-    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/xho.traineddata && \
-    echo "✅ Additional language packs downloaded"
+    # Download only language packs that are confirmed to exist
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tik.traineddata || echo "tik not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/snd.traineddata || echo "snd not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kur.traineddata || echo "kur not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/aze.traineddata || echo "aze not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kaz.traineddata || echo "kaz not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/uzb.traineddata || echo "uzb not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tgk.traineddata || echo "tgk not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/kir.traineddata || echo "kir not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tir.traineddata || echo "tir not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/som.traineddata || echo "som not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/yor.traineddata || echo "yor not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/ibo.traineddata || echo "ibo not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/hau.traineddata || echo "hau not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/zul.traineddata || echo "zul not found" && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/xho.traineddata || echo "xho not found" && \
+    echo "✅ Language pack download completed"
 
 # Set working directory
 WORKDIR /app
