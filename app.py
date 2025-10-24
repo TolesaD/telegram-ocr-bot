@@ -39,29 +39,22 @@ for key, fallback_value in FALLBACK_VALUES.items():
         os.environ[key] = fallback_value
         logger.warning(f"Using fallback for {key}")
 
-# Import database - UPDATED FOR POSTGRESQL
+# Import language support if available
 try:
-    # Try PostgreSQL first if DATABASE_URL is available
-    if os.environ.get('DATABASE_URL'):
-        try:
-            from database.postgres_db import PostgresDatabase
-            db = PostgresDatabase()
-            logger.info("✅ PostgreSQL database imported")
-        except ImportError as e:
-            logger.error(f"PostgreSQL import failed: {e}")
-            raise
-    else:
-        # Fallback to SQLite for local development
-        try:
-            from database.sqlite_db import SQLiteDatabase
-            db = SQLiteDatabase()
-            logger.info("✅ SQLite database imported (local development)")
-        except ImportError as e:
-            logger.error(f"SQLite import failed: {e}")
-            raise
+    from ocr_engine.language_support import detect_primary_language, get_language_name
+    LANGUAGE_SUPPORT_AVAILABLE = True
+    logger.info("✅ Language support module imported")
+except ImportError as e:
+    LANGUAGE_SUPPORT_AVAILABLE = False
+    logger.warning(f"❌ Language support module not available: {e}")
 
+# Import database - POSTGRESQL ONLY VERSION
+try:
+    from database.postgres_db import PostgresDatabase
+    db = PostgresDatabase()
+    logger.info("✅ PostgreSQL database imported successfully")
 except Exception as e:
-    logger.error(f"Database import failed: {e}")
+    logger.error(f"PostgreSQL database import failed: {e}")
     # Fallback to mock database
     class MockDB:
         def __init__(self): 
@@ -373,15 +366,23 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Format text
         formatted_text = TextFormatter.format_text(extracted_text, text_format)
         
-        # Send result
+        # LANGUAGE DETECTION - ADDED HERE
+        if LANGUAGE_SUPPORT_AVAILABLE:
+            detected_lang = detect_primary_language(extracted_text)
+            lang_name = get_language_name(detected_lang)
+            language_info = f" (Detected: {lang_name})"
+        else:
+            language_info = ""
+        
+        # Send result with language info
         if text_format == 'html':
             await processing_msg.edit_text(
-                f"✅ **Text Extracted** (HTML Format)\n\n{formatted_text}",
+                f"✅ **Text Extracted**{language_info} (HTML Format)\n\n{formatted_text}",
                 parse_mode='HTML'
             )
         else:
             await processing_msg.edit_text(
-                f"✅ **Text Extracted**\n\n{formatted_text}",
+                f"✅ **Text Extracted**{language_info}\n\n{formatted_text}",
                 parse_mode='Markdown'
             )
         
