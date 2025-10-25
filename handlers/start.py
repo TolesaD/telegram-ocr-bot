@@ -1,11 +1,14 @@
 # handlers/start.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 from datetime import datetime
 import config
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Store user verification status to avoid repeated checks
+user_verification_cache = {}
 
 def get_main_keyboard():
     """Get the main inline keyboard"""
@@ -25,6 +28,68 @@ def get_channel_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """Check if user is a member of the announcement channel with caching"""
+    # Check cache first
+    if user_id in user_verification_cache:
+        cached_status = user_verification_cache[user_id]
+        # Cache expires after 1 hour
+        if (datetime.now() - cached_status['timestamp']).total_seconds() < 3600:
+            logger.info(f"🎯 Using cached membership status for user {user_id}: {cached_status['status']}")
+            return cached_status['status']
+    
+    try:
+        logger.info(f"🔍 Checking membership for user {user_id}")
+        
+        chat_member = await context.bot.get_chat_member(
+            chat_id=config.ANNOUNCEMENT_CHANNEL,
+            user_id=user_id
+        )
+        
+        logger.info(f"📊 User {user_id} status: {chat_member.status}")
+        
+        is_member = chat_member.status not in ['left', 'kicked', 'banned']
+        
+        # Update cache
+        user_verification_cache[user_id] = {
+            'status': is_member,
+            'timestamp': datetime.now()
+        }
+        
+        if is_member:
+            logger.info(f"✅ User {user_id} is a channel member")
+            return True
+        else:
+            logger.info(f"❌ User {user_id} not in channel")
+            return False
+        
+    except Exception as e:
+        logger.error(f"🚨 Error checking membership for user {user_id}: {e}")
+        # If bot can't access channel, allow user to proceed but don't cache
+        return True
+
+async def require_channel_membership(handler):
+    """Decorator to require channel membership for any handler"""
+    async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        
+        # Skip verification for admins
+        if user.id in config.ADMIN_IDS:
+            return await handler(update, context)
+        
+        # Check membership
+        has_joined = await check_channel_membership(update, context, user.id)
+        
+        if not has_joined:
+            logger.info(f"🚫 Blocking user {user.id} - not in channel")
+            await show_channel_requirement(update, context)
+            return
+        
+        # User is verified, proceed with original handler
+        return await handler(update, context)
+    
+    return wrapped
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command with channel requirement"""
     user = update.effective_user
@@ -42,36 +107,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # User has joined, proceed to main menu
     logger.info(f"✅ User {user.id} verified, proceeding")
     await process_user_start(update, context, user)
-
-async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    """Check if user is a member of the announcement channel"""
-    try:
-        logger.info(f"🔍 Checking membership for user {user_id}")
-        
-        chat_member = await context.bot.get_chat_member(
-            chat_id=config.ANNOUNCEMENT_CHANNEL,
-            user_id=user_id
-        )
-        
-        logger.info(f"📊 User {user_id} status: {chat_member.status}")
-        
-        if chat_member.status not in ['left', 'kicked', 'banned']:
-            logger.info(f"✅ User {user_id} is a channel member")
-            return True
-        else:
-            logger.info(f"❌ User {user.id} not in channel (status: {chat_member.status})")
-            return False
-        
-    except Exception as e:
-        logger.error(f"🚨 Error checking membership for user {user_id}: {e}")
-        try:
-            chat = await context.bot.get_chat(config.ANNOUNCEMENT_CHANNEL)
-            logger.warning(f"⚠️ Bot can access channel {chat.title} but can't check membership")
-            return False
-        except Exception as e2:
-            logger.error(f"🚨 Bot cannot access channel {config.ANNOUNCEMENT_CHANNEL}: {e2}")
-            # If bot can't access channel, allow user to proceed
-            return True
 
 async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show channel join requirement"""
@@ -118,6 +153,10 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"🔄 User {user.id} checking membership...")
     
+    # Clear cache to force fresh check
+    if user.id in user_verification_cache:
+        del user_verification_cache[user.id]
+    
     has_joined = await check_channel_membership(update, context, user.id)
     
     if has_joined:
@@ -159,7 +198,6 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "✨ *Features:*\n"
         "• 🚀 Advanced text extraction\n"
         "• 🌍 **70+ languages supported**\n"
-        "• 📸 Blurry image processing\n"
         "• 💬 **Plain Text & HTML formats**\n"
         "• 🔤 Auto language detection\n\n"
         "📸 *How to use:*\n"
@@ -209,6 +247,10 @@ async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_T
     user = update.effective_user
     logger.info(f"🔧 Force membership check for user {user.id}")
     
+    # Clear cache
+    if user.id in user_verification_cache:
+        del user_verification_cache[user.id]
+    
     has_joined = await check_channel_membership(update, context, user.id)
     
     if has_joined:
@@ -235,3 +277,6 @@ async def handle_start_callback(update: Update, context: ContextTypes.DEFAULT_TY
     elif query.data == "restart_bot":
         await query.answer("🔄 Restarting bot...")
         await start_command(update, context)
+
+# Export the decorator for use in other handlers
+__all__ = ['require_channel_membership', 'start_command', 'check_channel_membership']
