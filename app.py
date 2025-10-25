@@ -4,7 +4,6 @@ import asyncio
 import signal
 import sys
 import subprocess
-import time
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from dotenv import load_dotenv
@@ -31,7 +30,7 @@ load_dotenv()
 FALLBACK_VALUES = {
     'BOT_TOKEN': '8327516444:AAGblijJShx3Uh9cWU7coADtUl_PnAeDZ5A',
     'SUPPORT_BOT': '@ImageToTextConverterSupportBot',
-    'CHANNEL_USERNAME': 'ImageToTextConverter',
+    'CHANNEL': '@ImageToTextConverter',
     'ADMIN_IDS': '417079598'
 }
 
@@ -93,74 +92,14 @@ except Exception as e:
     db = MockDB()
     logger.info("Using mock database as fallback")
 
-# Import OCR with better error handling
-ocr_processor = None
-performance_monitor = None
-TextFormatter = None
-
+# Import OCR
 try:
     from utils.image_processing import ocr_processor, performance_monitor
     from utils.text_formatter import TextFormatter
-    logger.info("✅ OCR components imported successfully")
+    logger.info("✅ OCR components imported")
 except ImportError as e:
     logger.error(f"OCR import failed: {e}")
-    # Create fallback OCR processor
-    class FallbackOCRProcessor:
-        async def extract_text_optimized(self, image_bytes, language=None):
-            return "❌ OCR system is currently unavailable. Please try again later."
-    
-    class FallbackPerformanceMonitor:
-        def record_request(self, processing_time):
-            pass
-        def get_stats(self):
-            return "System initializing"
-    
-    class FallbackTextFormatter:
-        @staticmethod
-        def format_text(text, format_type='plain'):
-            return text if text else "No text available"
-        @staticmethod
-        def split_long_message(text, max_length=4000):
-            return [text] if text else [""]
-    
-    ocr_processor = FallbackOCRProcessor()
-    performance_monitor = FallbackPerformanceMonitor()
-    TextFormatter = FallbackTextFormatter
-
-# ===== CHANNEL VERIFICATION =====
-
-async def check_channel_membership(user_id, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced channel membership check that works on every message"""
-    try:
-        CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', 'ImageToTextConverter')
-        # Ensure channel username has @ prefix
-        channel_username = f"@{CHANNEL_USERNAME}" if not CHANNEL_USERNAME.startswith('@') else CHANNEL_USERNAME
-        
-        logger.info(f"🔍 Checking channel membership for user {user_id} in {channel_username}")
-        
-        # Check if user is member of channel
-        chat_member = await context.bot.get_chat_member(chat_id=channel_username, user_id=user_id)
-        
-        # User must be member, administrator, or creator
-        is_member = chat_member.status in ['member', 'administrator', 'creator']
-        logger.info(f"📊 User {user_id} membership status: {chat_member.status} -> {'Member' if is_member else 'Not Member'}")
-        
-        return is_member
-    except Exception as e:
-        logger.error(f"Channel membership check failed: {e}")
-        # Allow access if check fails to avoid blocking legitimate users
-        return True
-
-def get_channel_keyboard():
-    """Get channel join keyboard"""
-    CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', 'ImageToTextConverter')
-    channel_username = f"@{CHANNEL_USERNAME}" if not CHANNEL_USERNAME.startswith('@') else CHANNEL_USERNAME
-    
-    keyboard = [
-        [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")],
-        [InlineKeyboardButton("✅ I've Joined", callback_data="check_membership")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    raise
 
 # ===== KEYBOARD LAYOUTS =====
 
@@ -196,78 +135,28 @@ def get_back_keyboard():
     keyboard = [[InlineKeyboardButton("🔙 Back to Main", callback_data="main_menu")]]
     return InlineKeyboardMarkup(keyboard)
 
+def get_channel_keyboard():
+    """Get channel join keyboard"""
+    from handlers.start import get_channel_keyboard as start_channel_keyboard
+    return start_channel_keyboard()
+
 # ===== HANDLER FUNCTIONS =====
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command with enhanced channel verification"""
-    user_id = update.effective_user.id
-    logger.info(f"🚀 Start command received from user {user_id}")
-    
-    # Check channel membership
-    is_member = await check_channel_membership(user_id, context)
-    
-    if not is_member:
-        logger.info(f"❌ User {user_id} not in channel, requesting join")
-        await update.message.reply_text(
-            "👋 Welcome to Image to Text Converter!\n\n"
-            "📢 To use this bot, please join our channel first:\n\n"
-            "🔹 Get updates on new features\n"
-            "🔹 Learn about improvements\n"
-            "🔹 Stay informed about the bot\n\n"
-            "Join the channel below and then click **'I've Joined'** to continue:",
-            parse_mode='Markdown',
-            reply_markup=get_channel_keyboard()
-        )
-        return
-    
-    # User is member, show main menu
-    logger.info(f"✅ User {user_id} is channel member, showing main menu")
-    await update.message.reply_text(
-        "👋 *Welcome to Image to Text Converter!*\n\n"
-        "I can extract text from images in *70+ languages*! 🌍\n\n"
-        "✨ *How to use:*\n"
-        "1. Send me an image with text\n"
-        "2. I'll automatically detect the language\n"
-        "3. Get your extracted text instantly\n\n"
-        "💡 *Tips for best results:*\n"
-        "• Clear, well-lit images\n"
-        "• Horizontal text alignment\n"
-        "• Good contrast between text and background\n\n"
-        "Choose an option below to get started:",
-        parse_mode='Markdown',
-        reply_markup=get_reply_keyboard()
-    )
-    
-    # Initialize user in database
+    """Start command - imported from handlers.start"""
     try:
-        user = db.get_user(user_id)
-        if not user:
-            user_data = {
-                'user_id': user_id,
-                'username': update.effective_user.username,
-                'first_name': update.effective_user.first_name,
-                'last_name': update.effective_user.last_name,
-                'settings': {'text_format': 'plain'}
-            }
-            db.insert_user(user_data)
-            logger.info(f"✅ New user {user_id} added to database")
-    except Exception as e:
-        logger.error(f"Error initializing user {user_id}: {e}")
+        from handlers.start import start_command as start_handler
+        await start_handler(update, context)
+    except ImportError as e:
+        logger.error(f"Start handler import failed: {e}")
+        await update.message.reply_text(
+            "👋 Welcome! Send me an image to extract text.",
+            parse_mode='Markdown',
+            reply_markup=get_reply_keyboard()
+        )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Help command with channel verification"""
-    user_id = update.effective_user.id
-    
-    # Check channel membership
-    is_member = await check_channel_membership(user_id, context)
-    if not is_member:
-        await update.message.reply_text(
-            "📢 Please join our channel to access help!\n\n"
-            "Join the channel below and then send /start again.",
-            reply_markup=get_channel_keyboard()
-        )
-        return
-    
+    """Help command"""
     await update.message.reply_text(
         "❓ *Help Guide*\n\n"
         "**How to use:**\n"
@@ -290,19 +179,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Settings command with channel verification"""
+    """Settings command"""
     user_id = update.effective_user.id
-    
-    # Check channel membership
-    is_member = await check_channel_membership(user_id, context)
-    if not is_member:
-        await update.message.reply_text(
-            "📢 Please join our channel to access settings!\n\n"
-            "Join the channel below and then send /start again.",
-            reply_markup=get_channel_keyboard()
-        )
-        return
-    
     try:
         user = db.get_user(user_id)
         current_format = user.get('settings', {}).get('text_format', 'plain') if user else 'plain'
@@ -318,19 +196,8 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Statistics command with channel verification"""
+    """Statistics command"""
     user_id = update.effective_user.id
-    
-    # Check channel membership
-    is_member = await check_channel_membership(user_id, context)
-    if not is_member:
-        await update.message.reply_text(
-            "📢 Please join our channel to view statistics!\n\n"
-            "Join the channel below and then send /start again.",
-            reply_markup=get_channel_keyboard()
-        )
-        return
-    
     try:
         stats = db.get_user_stats(user_id)
         total = stats.get('total_requests', 0)
@@ -356,19 +223,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def convert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Convert command with channel verification"""
-    user_id = update.effective_user.id
-    
-    # Check channel membership
-    is_member = await check_channel_membership(user_id, context)
-    if not is_member:
-        await update.message.reply_text(
-            "📢 Please join our channel to convert images!\n\n"
-            "Join the channel below and then send /start again.",
-            reply_markup=get_channel_keyboard()
-        )
-        return
-    
+    """Convert command"""
     await update.message.reply_text(
         "📸 *Ready to convert!*\n\n"
         "Send me an image containing text and I'll extract it for you.\n\n"
@@ -382,25 +237,6 @@ async def convert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown',
         reply_markup=get_reply_keyboard()
     )
-
-async def handle_message_with_channel_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced message handler with channel verification"""
-    user_id = update.effective_user.id
-    
-    # Check channel membership for all messages except start command
-    if update.message and update.message.text and not update.message.text.startswith('/start'):
-        is_member = await check_channel_membership(user_id, context)
-        if not is_member:
-            logger.info(f"❌ User {user_id} not in channel, blocking message: {update.message.text}")
-            await update.message.reply_text(
-                "📢 Please join our channel to continue using the bot!\n\n"
-                "Join the channel below and then send /start again.",
-                reply_markup=get_channel_keyboard()
-            )
-            return
-    
-    # Proceed with normal message handling
-    await handle_text_message(update, context)
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages from reply keyboard"""
@@ -495,26 +331,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=get_reply_keyboard()
         )
 
-async def handle_image_with_channel_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced image handler with channel verification"""
-    user_id = update.effective_user.id
-    
-    # Check channel membership for image processing
-    is_member = await check_channel_membership(user_id, context)
-    if not is_member:
-        logger.info(f"❌ User {user_id} not in channel, blocking image processing")
-        await update.message.reply_text(
-            "📢 Please join our channel to use the OCR feature!\n\n"
-            "Join the channel below and then send /start again.",
-            reply_markup=get_channel_keyboard()
-        )
-        return
-    
-    # Proceed with normal image processing
-    await handle_image(update, context)
-
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle image messages"""
+    """Handle image messages with better timeout handling"""
     try:
         message = update.message
         if not message.photo:
@@ -523,17 +341,28 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         processing_msg = await message.reply_text("🔄 Processing your image...")
         
-        # Download image
+        # Download image with timeout
         photo = message.photo[-1]
         photo_file = await photo.get_file()
-        photo_bytes = await photo_file.download_as_bytearray()
         
-        # Extract text
+        # Download with timeout
+        try:
+            photo_bytes = await asyncio.wait_for(
+                photo_file.download_as_bytearray(),
+                timeout=10.0  # 10 second download timeout
+            )
+        except asyncio.TimeoutError:
+            await processing_msg.edit_text("❌ Image download timed out. Please try again.")
+            return
+        
+        # Extract text with progress update
+        await processing_msg.edit_text("🔍 Extracting text from image...")
+        
         extracted_text = await ocr_processor.extract_text_optimized(bytes(photo_bytes))
         
-        if not extracted_text or "No readable text" in extracted_text:
+        if not extracted_text or "No readable text" in extracted_text or "timed out" in extracted_text.lower():
             await processing_msg.edit_text(
-                "❌ No readable text found.\n\nTry with a clearer image with better lighting."
+                "❌ No readable text found or processing timed out.\n\nTry with a clearer, smaller image with better lighting."
             )
             return
         
@@ -559,12 +388,12 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send result with language info
         if text_format == 'html':
             await processing_msg.edit_text(
-                f"✅ **Text Extracted**{language_info} (HTML Format)\n\n{formatted_text}",
+                f"✅ Text Extracted{language_info} (HTML Format)\n\n{formatted_text}",
                 parse_mode='HTML'
             )
         else:
             await processing_msg.edit_text(
-                f"✅ **Text Extracted**{language_info}\n\n{formatted_text}",
+                f"✅ Text Extracted{language_info}\n\n{formatted_text}",
                 parse_mode='Markdown'
             )
         
@@ -580,6 +409,12 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error logging request: {e}")
             
+    except asyncio.TimeoutError:
+        logger.error("Overall image processing timeout")
+        try:
+            await update.message.reply_text("❌ Processing timed out. Please try with a smaller image.")
+        except:
+            pass
     except Exception as e:
         logger.error(f"Image processing error: {e}")
         try:
@@ -593,42 +428,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     data = query.data
-    user_id = query.from_user.id
-    logger.info(f"Callback received: {data} from user {user_id}")
+    logger.info(f"Callback received: {data}")
     
-    # Handle channel membership check
+    # Handle channel membership check first
     if data == "check_membership":
-        is_member = await check_channel_membership(user_id, context)
-        if is_member:
-            await query.answer("✅ Thank you for joining! Welcome!")
-            await show_main_menu(query)
-        else:
-            await query.answer("❌ Please join the channel first!", show_alert=True)
-            await query.edit_message_text(
-                "❌ *Channel Membership Required*\n\n"
-                "I still don't see you in our channel. Please:\n\n"
-                "1. Click the 'Join Channel' button below\n"
-                "2. Actually join the channel (don't just open it)\n"
-                "3. Come back and click 'I've Joined' again\n\n"
-                "This helps us keep the bot running and improved! 🚀",
-                parse_mode='Markdown',
-                reply_markup=get_channel_keyboard()
-            )
-        return
-    
-    # Check channel membership for other callbacks (except main_menu)
-    if data != "main_menu":
-        is_member = await check_channel_membership(user_id, context)
-        if not is_member:
-            await query.answer("❌ Please join the channel first!", show_alert=True)
-            await query.edit_message_text(
-                "📢 *Channel Membership Required*\n\n"
-                "To use this feature, please join our channel first.\n\n"
-                "Join the channel below and then click 'I've Joined':",
-                parse_mode='Markdown',
-                reply_markup=get_channel_keyboard()
-            )
+        try:
+            from handlers.start import handle_membership_check
+            await handle_membership_check(update, context)
             return
+        except ImportError as e:
+            logger.error(f"Membership handler import failed: {e}")
+            await query.answer("✅ Welcome! You're all set.")
+            await show_main_menu(query)
+        return
     
     # Handle other callbacks
     if data == "main_menu":
@@ -821,16 +633,14 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 def main():
-    """Main function with better error handling"""
+    """Main function"""
     try:
         BOT_TOKEN = os.getenv('BOT_TOKEN')
         if not BOT_TOKEN:
             logger.error("BOT_TOKEN not found")
             return
 
-        logger.info("🔄 Initializing bot application...")
-        
-        # Create application with timeout handling
+        # Create application with post_init
         application = (
             Application.builder()
             .token(BOT_TOKEN)
@@ -841,15 +651,15 @@ def main():
         # Store database
         application.bot_data['db'] = db
         
-        # Add handlers with enhanced channel verification
+        # Add handlers
         handlers = [
             CommandHandler("start", start_command),
             CommandHandler("help", help_command),
             CommandHandler("settings", settings_command),
             CommandHandler("stats", stats_command),
             CommandHandler("convert", convert_command),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message_with_channel_check),
-            MessageHandler(filters.PHOTO, handle_image_with_channel_check),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message),
+            MessageHandler(filters.PHOTO, handle_image),
             CallbackQueryHandler(handle_callback),
         ]
         
@@ -859,21 +669,16 @@ def main():
         # Add error handler
         application.add_error_handler(error_handler)
         
-        logger.info("✅ All handlers registered with enhanced channel verification")
-        logger.info("🚀 Starting bot polling...")
+        logger.info("✅ All handlers registered")
+        logger.info("🚀 Starting bot...")
         
-        # Start polling with better error handling
         application.run_polling(
             drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES,
-            close_loop=False
+            allowed_updates=Update.ALL_TYPES
         )
         
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
-        logger.info("🔄 Attempting to restart in 5 seconds...")
-        time.sleep(5)
-        main()  # Recursive restart
 
 if __name__ == "__main__":
     main()

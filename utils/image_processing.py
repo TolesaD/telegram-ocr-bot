@@ -59,61 +59,60 @@ class AdvancedImagePreprocessor:
     
     @staticmethod
     def preprocess_image(image_bytes: bytes) -> np.ndarray:
-        """Optimize image for OCR while preserving text structure"""
+        """Optimize image for OCR while preserving text structure - FAST VERSION"""
         try:
+            # Fast image loading
             image = Image.open(io.BytesIO(image_bytes))
-            img_array = np.array(image.convert('RGB'))
             
-            # Convert to grayscale
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            # Convert to grayscale directly (faster than RGB conversion)
+            if image.mode != 'L':
+                image = image.convert('L')
             
-            # Smart resizing - only if necessary
-            height, width = gray.shape
-            if height > 1600 or width > 1600:
-                scale = min(1600/height, 1600/width)
+            img_array = np.array(image)
+            
+            # Fast resizing - only if necessary
+            height, width = img_array.shape
+            if height > 1200 or width > 1200:  # Reduced from 1600
+                scale = min(1200/height, 1200/width)
                 new_width = int(width * scale)
                 new_height = int(height * scale)
-                gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                img_array = cv2.resize(img_array, (new_width, new_height), interpolation=cv2.INTER_LINEAR)  # Faster than INTER_AREA
             
-            # Enhanced preprocessing pipeline
-            # Step 1: Denoising
-            denoised = cv2.fastNlMeansDenoising(gray, h=10)
+            # FAST preprocessing pipeline (skip heavy operations for local testing)
+            # Only apply essential preprocessing
+            if height * width > 500000:  # Only for large images
+                # Simple contrast enhancement
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))  # Reduced grid size
+                img_array = clahe.apply(img_array)
+            else:
+                # For small images, just normalize
+                img_array = cv2.normalize(img_array, None, 0, 255, cv2.NORM_MINMAX)
             
-            # Step 2: Contrast enhancement
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(denoised)
-            
-            # Step 3: Light sharpening for blurry text
-            kernel = np.array([[-1, -1, -1],
-                              [-1,  9, -1],
-                              [-1, -1, -1]])
-            sharpened = cv2.filter2D(enhanced, -1, kernel)
-            
-            return sharpened
+            return img_array
             
         except Exception as e:
             logger.error(f"Preprocessing error: {e}")
-            # Fallback to simple conversion
+            # Ultra-fast fallback
             try:
                 image = Image.open(io.BytesIO(image_bytes)).convert('L')
                 return np.array(image)
             except Exception as fallback_error:
                 logger.error(f"Fallback preprocessing also failed: {fallback_error}")
-                raise
+                # Create a simple black image as last resort
+                return np.zeros((100, 100), dtype=np.uint8)
 
 class ProductionOCRProcessor:
-    """Production-grade OCR processor with paragraph detection"""
+    """Production-grade OCR processor - OPTIMIZED FOR SPEED"""
     
     def __init__(self):
         self.preprocessor = AdvancedImagePreprocessor()
-        self.executor = ThreadPoolExecutor(max_workers=3)
+        self.executor = ThreadPoolExecutor(max_workers=2)  # Reduced workers
         
-        # Optimized configurations
+        # FAST configurations - simplified
         self.configs = {
-            'paragraph': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
-            'document': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
-            'blurry': '--oem 3 --psm 6 -c textord_min_linesize=0.5',
-            'default': '--oem 3 --psm 6 -c preserve_interword_spaces=1'
+            'fast': '--oem 1 --psm 6',  # Fastest engine, single text block
+            'default': '--oem 1 --psm 6',
+            'document': '--oem 1 --psm 3'
         }
         
         # Test Tesseract availability
@@ -126,135 +125,91 @@ class ProductionOCRProcessor:
             version = pytesseract.get_tesseract_version()
             logger.info(f"✅ Tesseract version: {version}")
             
-            # List available languages
-            try:
-                langs = pytesseract.get_languages()
-                logger.info(f"✅ Available languages: {langs}")
-            except:
-                logger.info("ℹ️ Could not list languages, but Tesseract is available")
-                
         except Exception as e:
             logger.error(f"❌ Tesseract verification failed: {e}")
-            raise RuntimeError("OCR system is currently unavailable. Please try again later.")
+            # Don't raise error, just log - we'll handle it in processing
     
     async def extract_text_optimized(self, image_bytes: bytes) -> str:
-        """Main OCR extraction function with timeout protection"""
+        """Main OCR extraction function - OPTIMIZED FOR SPEED"""
         start_time = time.time()
         
         try:
-            # Preprocess image
-            processed_img = await asyncio.get_event_loop().run_in_executor(
-                self.executor, self.preprocessor.preprocess_image, image_bytes
+            # FAST preprocessing with timeout
+            processed_img = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    self.executor, self.preprocessor.preprocess_image, image_bytes
+                ),
+                timeout=5.0  # 5 second timeout for preprocessing
             )
             
-            # Analyze image for optimal configuration
-            quality_info = self.preprocessor.detect_image_quality(processed_img)
-            config_type = self._select_optimal_config(quality_info)
-            
-            # Extract text with paragraph detection
+            # FAST OCR extraction with reasonable timeout
             extracted_text = await asyncio.wait_for(
-                self._extract_with_fallback(processed_img, config_type),
-                timeout=25.0  # 25 second timeout
+                self._extract_fast(processed_img),
+                timeout=15.0  # 15 second timeout for OCR (reduced from 25)
             )
             
             processing_time = time.time() - start_time
             
-            if extracted_text and len(extracted_text.strip()) > 5:
+            if extracted_text and len(extracted_text.strip()) > 2:  # Reduced from 5
                 performance_monitor.record_request(processing_time)
-                logger.info(f"✅ Production OCR completed in {processing_time:.2f}s")
+                logger.info(f"✅ OCR completed in {processing_time:.2f}s - {len(extracted_text)} chars")
                 return extracted_text
             else:
                 performance_monitor.record_error()
-                return self._get_error_message()
+                return "No readable text found in the image. Please try a clearer image with better lighting."
                 
         except asyncio.TimeoutError:
-            logger.warning("OCR processing timeout")
+            processing_time = time.time() - start_time
+            logger.warning(f"OCR processing timeout after {processing_time:.2f}s")
             performance_monitor.record_error()
-            return "⏱️ Processing took too long. Please try a smaller image (under 2MB)."
+            return "Processing took too long. Please try a smaller or simpler image."
         except Exception as e:
-            logger.error(f"OCR processing error: {e}")
+            processing_time = time.time() - start_time
+            logger.error(f"OCR processing error after {processing_time:.2f}s: {e}")
             performance_monitor.record_error()
-            return "❌ OCR system is currently unavailable. Please try again later."
+            return "Error processing image. Please try again with a different image."
     
-    def _select_optimal_config(self, quality_info: Dict) -> str:
-        """Select optimal OCR configuration based on image analysis"""
-        if quality_info.get('is_blurry', False):
-            return 'blurry'
-        elif quality_info.get('is_low_contrast', False):
-            return 'blurry'
-        else:
-            return 'paragraph'
-    
-    async def _extract_with_fallback(self, image: np.ndarray, config_type: str) -> str:
-        """Extract text with intelligent fallback strategy"""
+    async def _extract_fast(self, image: np.ndarray) -> str:
+        """FAST text extraction with minimal language attempts"""
         loop = asyncio.get_event_loop()
-        config = self.configs[config_type]
+        config = self.configs['fast']
         
-        # Language fallback strategy
+        # FAST language strategy - try only essential languages
         language_attempts = [
-            'eng',  # Primary: English
-            'eng+amh',  # Secondary: English + Amharic
-            'amh',  # Tertiary: Amharic only
+            'eng',    # Primary: English only (fastest)
         ]
-        
-        best_text = ""
         
         for lang in language_attempts:
             try:
-                logger.info(f"Attempting OCR with language: {lang}")
                 text = await loop.run_in_executor(
-                    self.executor, self._extract_single_language, image, lang, config
+                    self.executor, self._extract_single_language_fast, image, lang, config
                 )
                 
-                if text and len(text.strip()) > len(best_text.strip()):
-                    best_text = text
-                    logger.info(f"✅ Got better results with {lang}: {len(text)} chars")
+                if text and len(text.strip()) > 1:
+                    return text
                     
-                    # Early exit if we get good results
-                    if len(text.strip()) > 20:
-                        break
-                        
             except Exception as e:
                 logger.debug(f"Language {lang} failed: {e}")
                 continue
         
-        return best_text if best_text.strip() else await self._extract_any_language(image, config)
-    
-    def _extract_single_language(self, image: np.ndarray, lang: str, config: str) -> str:
-        """Extract text with a single language"""
+        # Final attempt: no language specified (fastest)
         try:
-            return pytesseract.image_to_string(image, lang=lang, config=config).strip()
-        except Exception as e:
-            logger.warning(f"OCR failed for {lang}: {e}")
-            return ""
-    
-    async def _extract_any_language(self, image: np.ndarray, config: str) -> str:
-        """Final fallback: try OCR without specifying language"""
-        try:
-            loop = asyncio.get_event_loop()
             text = await loop.run_in_executor(
                 self.executor, pytesseract.image_to_string, image, config
             )
             return text.strip()
-        except Exception as e:
-            logger.error(f"Final OCR fallback failed: {e}")
+        except:
             return ""
     
-    def _get_error_message(self) -> str:
-        """Get user-friendly error message"""
-        return (
-            "❌ No readable text found.\n\n"
-            "💡 *Tips for better results:*\n"
-            "• Use clear, high-contrast images\n"
-            "• Ensure text is horizontal and focused\n"
-            "• Good lighting reduces errors\n"
-            "• Avoid blurry or distorted text\n\n"
-            "📸 *Ideal images:*\n"
-            "• Documents and printed text\n"
-            "• High-quality screenshots\n"
-            "• Well-lit photos of text\n"
-            "• Images under 5MB in size"
-        )
+    def _extract_single_language_fast(self, image: np.ndarray, lang: str, config: str) -> str:
+        """FAST single language extraction"""
+        try:
+            # Use faster image_to_string instead of image_to_data
+            text = pytesseract.image_to_string(image, lang=lang, config=config)
+            return text.strip()
+        except Exception as e:
+            logger.debug(f"Fast OCR failed for {lang}: {e}")
+            return ""
 
 # Global instances
 ocr_processor = ProductionOCRProcessor()
