@@ -12,7 +12,7 @@ ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '417079598').split(',')]
 
 # OCR Configuration
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB
-PROCESSING_TIMEOUT = 120  # seconds
+PROCESSING_TIMEOUT = 30  # seconds
 
 # Format Options
 FORMAT_OPTIONS = ['plain', 'html']
