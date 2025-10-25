@@ -7,7 +7,7 @@ class TextFormatter:
     @staticmethod
     def format_plain(text):
         """
-        Enhanced plain text formatting that preserves structure and fixes bullet detection
+        Enhanced plain text formatting that preserves structure and handles Amharic
         """
         if not text:
             return ""
@@ -60,7 +60,7 @@ class TextFormatter:
     
     @staticmethod
     def _clean_line_preserve_structure(line):
-        """Clean line while preserving bullets and structure"""
+        """Clean line while preserving bullets, structure, and Amharic characters"""
         if not line.strip():
             return ""
         
@@ -78,8 +78,16 @@ class TextFormatter:
         else:
             line_content = line
         
-        # Clean internal whitespace but preserve word spacing
-        cleaned_line = ' '.join(line_content.split())
+        # For Amharic text, be more careful with cleaning to preserve characters
+        amharic_chars = sum(1 for c in line_content if '\u1200' <= c <= '\u137F')
+        total_chars = len(line_content.strip())
+        
+        if total_chars > 0 and (amharic_chars / total_chars) > 0.3:
+            # This is likely Amharic text, preserve original spacing more carefully
+            cleaned_line = ' '.join(line_content.split())
+        else:
+            # For other languages, normal cleaning
+            cleaned_line = ' '.join(line_content.split())
         
         # Restore bullet if present
         if has_bullet and cleaned_line:

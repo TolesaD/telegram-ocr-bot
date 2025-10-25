@@ -23,7 +23,7 @@ try:
         get_fallback_strategy, clean_ocr_text, validate_ocr_result,
         detect_primary_language, get_language_confidence,
         get_supported_languages, get_language_name,
-        detect_language_with_fallback
+        detect_language_with_fallback, is_amharic_character
     )
     LANGUAGE_SUPPORT_AVAILABLE = True
     logger.info("✅ Enhanced language support loaded")
@@ -190,143 +190,6 @@ class OCRProcessor:
             logger.error(f"Full error details:", exc_info=True)
             return "❌ Error processing image. Please try again with a different image."
 
-    async def multi_engine_ocr(self, processed_image, original_image_bytes):
-        """Multi-engine OCR with smart fallback strategies"""
-        strategies = []
-        
-        # Strategy 1: Tesseract with optimized configuration for paragraphs
-        if LANGUAGE_SUPPORT_AVAILABLE:
-            optimized_lang = self.get_optimized_language_config(processed_image)
-            
-            # Try different PSM modes for better structure detection
-            strategies.extend([
-                ('tesseract', optimized_lang, '--oem 3 --psm 6 -c preserve_interword_spaces=1 -c textord_min_linesize=1.0'),  # Uniform block
-                ('tesseract', optimized_lang, '--oem 3 --psm 4 -c preserve_interword_spaces=1'),  # Single column
-                ('tesseract', optimized_lang, '--oem 3 --psm 3 -c preserve_interword_spaces=1'),  # Fully automatic
-            ])
-        
-        # Strategy 2: EasyOCR if available (better for Chinese/Japanese/Korean and blurry images)
-        if self.easyocr_available:
-            strategies.append(('easyocr', 'multi', ''))
-        
-        # Strategy 3: Universal fallback strategies
-        strategies.extend([
-            ('tesseract', 'eng+chi_sim+chi_tra', '--oem 3 --psm 6 -c preserve_interword_spaces=1'),
-            ('tesseract', 'eng', '--oem 3 --psm 6 -c preserve_interword_spaces=1'),
-        ])
-        
-        best_text = ""
-        best_confidence = 0
-        best_engine = "none"
-        
-        for i, (engine, lang, config) in enumerate(strategies):
-            try:
-                logger.info(f"🔧 Trying {engine} strategy {i+1}: {lang} with {config}")
-                
-                if engine == 'tesseract':
-                    text = await self.extract_with_tesseract(processed_image, lang, config)
-                else:  # easyocr
-                    text = await self.extract_with_easyocr(original_image_bytes)
-                
-                if text and text.strip():
-                    # Calculate confidence
-                    confidence = self.calculate_text_confidence(text, lang)
-                    
-                    if confidence > best_confidence:
-                        best_text = text
-                        best_confidence = confidence
-                        best_engine = engine
-                        logger.info(f"✅ {engine} strategy {i+1} confidence: {confidence:.2f}")
-                    
-                    # Early exit for high confidence results
-                    if confidence > 0.85:
-                        logger.info(f"🎯 High confidence result with {engine} strategy {i+1}")
-                        break
-                        
-            except Exception as e:
-                logger.warning(f"❌ {engine} strategy {i+1} failed: {e}")
-                continue
-        
-        logger.info(f"🏆 Best result from {best_engine} with confidence {best_confidence:.2f}")
-        return best_text
-
-    def get_optimized_language_config(self, processed_image=None):
-        """Get optimized language configuration using enhanced language support"""
-        if not LANGUAGE_SUPPORT_AVAILABLE:
-            return self.get_multilingual_config()
-        
-        # Quick OCR to detect script and language
-        detected_script = 'Latin'  # Default
-        
-        if processed_image:
-            try:
-                # Quick OCR to detect script
-                quick_text = pytesseract.image_to_string(
-                    processed_image, 
-                    lang='osd',  # Orientation and script detection
-                    config='--psm 0 --oem 3 -c min_characters_to_try=3'
-                )
-                if quick_text:
-                    detected_script = detect_script_from_text(quick_text)
-                    logger.info(f"🔍 Detected script: {detected_script}")
-            except Exception as e:
-                logger.warning(f"Script detection failed: {e}")
-        
-        # Get languages for the detected script
-        script_languages = SCRIPT_FAMILIES.get(detected_script, ['en'])
-        
-        # Convert to Tesseract codes and filter available ones
-        tesseract_langs = []
-        for lang_code in script_languages:
-            tesseract_code = get_tesseract_code(lang_code)
-            if tesseract_code in self.available_languages and tesseract_code not in tesseract_langs:
-                tesseract_langs.append(tesseract_code)
-        
-        # If no languages found for script, use available languages
-        if not tesseract_langs:
-            tesseract_langs = self.available_languages[:3]  # Use first 3 available
-        
-        lang_config = '+'.join(tesseract_langs)
-        logger.info(f"🌍 Using optimized language config: {lang_config} for {detected_script} script")
-        return lang_config
-
-    async def extract_with_easyocr(self, image_bytes):
-        """Extract text using EasyOCR (better for CJK languages and blurry images)"""
-        if not self.easyocr_available:
-            return ""
-        
-        try:
-            import easyocr
-            loop = asyncio.get_event_loop()
-            
-            # Read image directly from bytes
-            image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
-            
-            if image is None:
-                logger.error("❌ Failed to decode image for EasyOCR")
-                return ""
-            
-            # Perform OCR with paragraph detection
-            results = await loop.run_in_executor(
-                thread_pool,
-                lambda: self.easyocr_reader.readtext(
-                    image, 
-                    paragraph=True,  # Group text into paragraphs
-                    detail=0,  # Return only text, no bounding boxes or confidence
-                    batch_size=4  # Process in batches for better performance
-                )
-            )
-            
-            # Combine results with proper spacing
-            text = '\n'.join([str(item) for item in results if item])
-            
-            logger.info(f"🔤 EasyOCR extracted {len(text)} characters")
-            return text
-            
-        except Exception as e:
-            logger.error(f"EasyOCR extraction failed: {e}")
-            return ""
-
     def enhanced_preprocessing(self, image_bytes):
         """Enhanced preprocessing for blurry and low-quality images"""
         try:
@@ -395,6 +258,260 @@ class OCRProcessor:
         
         return cleaned
 
+    async def multi_engine_ocr(self, processed_image, original_image_bytes):
+        """Multi-engine OCR with smart fallback strategies"""
+        strategies = []
+        
+        # Get optimized language first
+        optimized_lang = self.get_optimized_language_config(processed_image) if LANGUAGE_SUPPORT_AVAILABLE else 'eng'
+        
+        # Strategy 1: Use the optimized language first
+        strategies.append(('tesseract', optimized_lang, '--oem 3 --psm 6 -c preserve_interword_spaces=1'))
+        
+        # Strategy 2: Always try Amharic as a secondary option if available
+        if 'amh' in self.available_languages and optimized_lang != 'amh':
+            strategies.append(('tesseract', 'amh', '--oem 3 --psm 6 -c preserve_interword_spaces=1'))
+        
+        # Strategy 3: Try multilingual combinations
+        if optimized_lang == 'eng' and 'amh' in self.available_languages:
+            strategies.append(('tesseract', 'eng+amh', '--oem 3 --psm 6 -c preserve_interword_spaces=1'))
+        elif optimized_lang == 'amh' and 'eng' in self.available_languages:
+            strategies.append(('tesseract', 'amh+eng', '--oem 3 --psm 6 -c preserve_interword_spaces=1'))
+        
+        # Strategy 4: Try different PSM modes for better structure detection
+        strategies.extend([
+            ('tesseract', optimized_lang, '--oem 3 --psm 4 -c preserve_interword_spaces=1'),  # Single column
+            ('tesseract', optimized_lang, '--oem 3 --psm 3 -c preserve_interword_spaces=1'),  # Fully automatic
+        ])
+        
+        # Strategy 5: EasyOCR if available (better for Chinese/Japanese/Korean and blurry images)
+        if self.easyocr_available:
+            strategies.append(('easyocr', 'multi', ''))
+        
+        # Strategy 6: Universal fallback strategies
+        strategies.extend([
+            ('tesseract', 'eng', '--oem 3 --psm 6 -c preserve_interword_spaces=1'),
+        ])
+        
+        best_text = ""
+        best_confidence = 0
+        best_engine = "none"
+        
+        for i, (engine, lang, config) in enumerate(strategies):
+            try:
+                logger.info(f"🔧 Trying {engine} strategy {i+1}: {lang} with {config}")
+                
+                if engine == 'tesseract':
+                    text = await self.extract_with_tesseract(processed_image, lang, config)
+                else:  # easyocr
+                    text = await self.extract_with_easyocr(original_image_bytes)
+                
+                if text and text.strip():
+                    # Calculate confidence
+                    confidence = self.calculate_text_confidence(text, lang)
+                    
+                    # Smart confidence adjustment for Amharic
+                    if 'amh' in lang:
+                        if self._is_amharic_text(text):
+                            confidence = min(confidence + 0.3, 1.0)  # Increased boost
+                            logger.info(f"📈 Boosted confidence for meaningful Amharic text: {confidence:.2f}")
+                        else:
+                            # If using Amharic but no meaningful Amharic letters found, reduce confidence
+                            confidence = confidence * 0.6  # Increased reduction
+                            logger.info(f"📉 Reduced confidence for Amharic without letters: {confidence:.2f}")
+                    
+                    # Special case: if optimized language was English but we got Amharic text with Amharic OCR, boost confidence
+                    if optimized_lang == 'eng' and 'amh' in lang and self._is_amharic_text(text):
+                        confidence = min(confidence + 0.4, 1.0)  # Boost for correct Amharic detection
+                        logger.info(f"🎯 Significant confidence boost for Amharic detection on Amharic image: {confidence:.2f}")
+                    
+                    if confidence > best_confidence:
+                        best_text = text
+                        best_confidence = confidence
+                        best_engine = engine
+                        logger.info(f"✅ {engine} strategy {i+1} confidence: {confidence:.2f}")
+                    
+                    # Early exit for high confidence results
+                    if confidence > 0.9:  # Increased threshold
+                        logger.info(f"🎯 High confidence result with {engine} strategy {i+1}")
+                        break
+                        
+            except Exception as e:
+                logger.warning(f"❌ {engine} strategy {i+1} failed: {e}")
+                continue
+        
+        logger.info(f"🏆 Best result from {best_engine} with confidence {best_confidence:.2f}")
+        return best_text
+
+    def get_optimized_language_config(self, processed_image=None):
+        """Get optimized language configuration using enhanced language support"""
+        if not LANGUAGE_SUPPORT_AVAILABLE:
+            return self.get_multilingual_config()
+        
+        # Quick OCR to detect script and language
+        detected_script = 'Latin'  # Default
+        
+        if processed_image:
+            try:
+                # First, try a very quick English detection with minimal characters
+                eng_text = pytesseract.image_to_string(
+                    processed_image, 
+                    lang='eng',  # Try English first
+                    config='--psm 6 --oem 3 -c min_characters_to_try=1 -c tessedit_write_images=false'
+                )
+                
+                # Enhanced English detection with stricter criteria
+                if eng_text and len(eng_text.strip()) > 5:
+                    # Count actual English letters and common English words
+                    english_letters = sum(1 for c in eng_text if c.isalpha() and c.isascii())
+                    total_chars = len(eng_text.strip())
+                    
+                    # Check for common English words to confirm it's really English
+                    common_english_words = ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 'was', 'one', 'our']
+                    text_lower = eng_text.lower()
+                    english_word_count = sum(1 for word in common_english_words if word in text_lower)
+                    
+                    english_ratio = english_letters / total_chars if total_chars > 0 else 0
+                    
+                    # Very strict criteria for English detection
+                    if english_ratio > 0.85 or (english_ratio > 0.7 and english_word_count >= 2):
+                        logger.info(f"🔍 Confidently detected English text with {english_letters}/{total_chars} English chars and {english_word_count} common words")
+                        return 'eng'
+                
+                # Then try Amharic detection with very strict criteria
+                amh_text = pytesseract.image_to_string(
+                    processed_image, 
+                    lang='amh',  # Try Amharic
+                    config='--psm 6 --oem 3 -c min_characters_to_try=1 -c tessedit_write_images=false'
+                )
+                
+                # Very strict Amharic detection
+                if amh_text and len(amh_text.strip()) > 8:
+                    amharic_letters = sum(1 for c in amh_text if is_amharic_character(c) and not ('\u1369' <= c <= '\u1372'))
+                    total_chars = len(amh_text.strip())
+                    
+                    # Count actual Amharic characters vs potential false positives
+                    amharic_ratio = amharic_letters / total_chars if total_chars > 0 else 0
+                    
+                    # Very high threshold for Amharic to avoid false positives
+                    if amharic_ratio > 0.4:  # 40% must be actual Amharic letters
+                        logger.info(f"🔍 Confidently detected Amharic script with {amharic_letters}/{total_chars} Amharic letters (ratio: {amharic_ratio:.2f})")
+                        return 'amh'
+                    else:
+                        logger.info(f"🔍 Amharic detection rejected: only {amharic_letters}/{total_chars} Amharic letters (ratio: {amharic_ratio:.2f})")
+                
+                # If both specific detections failed, try script detection
+                quick_text = pytesseract.image_to_string(
+                    processed_image, 
+                    lang='osd',  # Orientation and script detection
+                    config='--psm 0 --oem 3 -c min_characters_to_try=1 -c tessedit_write_images=false'
+                )
+                if quick_text:
+                    detected_script = detect_script_from_text(quick_text)
+                    logger.info(f"🔍 Detected script: {detected_script}")
+                    
+                    # If script is Ethiopic, prioritize Amharic
+                    if detected_script == 'Ethiopic' and 'amh' in self.available_languages:
+                        logger.info("🎯 Script detection suggests Amharic, using Amharic OCR")
+                        return 'amh'
+            except Exception as e:
+                logger.warning(f"Script detection failed: {e}")
+        
+        # Get languages for the detected script
+        script_languages = SCRIPT_FAMILIES.get(detected_script, ['en'])
+        
+        # Convert to Tesseract codes and filter available ones
+        tesseract_langs = []
+        for lang_code in script_languages:
+            tesseract_code = get_tesseract_code(lang_code)
+            if tesseract_code in self.available_languages and tesseract_code not in tesseract_langs:
+                tesseract_langs.append(tesseract_code)
+        
+        # If we have Amharic available and detected Ethiopic script, prioritize it
+        if detected_script == 'Ethiopic' and 'amh' in self.available_languages:
+            if 'amh' not in tesseract_langs:
+                tesseract_langs.insert(0, 'amh')
+            else:
+                # Move amh to front
+                tesseract_langs.remove('amh')
+                tesseract_langs.insert(0, 'amh')
+        
+        # If no languages found for script, use available languages
+        if not tesseract_langs:
+            tesseract_langs = self.available_languages[:3]  # Use first 3 available
+        
+        lang_config = '+'.join(tesseract_langs)
+        logger.info(f"🌍 Using optimized language config: {lang_config} for {detected_script} script")
+        return lang_config
+
+    def _is_amharic_text(self, text):
+        """Check if text contains meaningful Amharic characters (not just Geez numbers)"""
+        if not text:
+            return False
+        
+        # Count Amharic letters (excluding Geez numbers ፩-፲)
+        amharic_letters = sum(1 for c in text if is_amharic_character(c) and not ('\u1369' <= c <= '\u1372'))
+        
+        # Count Geez numbers separately
+        geez_numbers = sum(1 for c in text if '\u1369' <= c <= '\u1372')
+        
+        # Count English letters to check for false positives
+        english_letters = sum(1 for c in text if c.isalpha() and c.isascii())
+        
+        total_chars = len(text.strip())
+        
+        if total_chars == 0:
+            return False
+        
+        amharic_letter_ratio = amharic_letters / total_chars
+        geez_number_ratio = geez_numbers / total_chars
+        english_ratio = english_letters / total_chars
+        
+        # Only boost confidence if there are actual Amharic letters and minimal English
+        has_meaningful_amharic = amharic_letter_ratio > 0.25 and english_ratio < 0.3  # Higher threshold, less English
+        
+        logger.info(f"🔤 Amharic analysis - Letters: {amharic_letters}, Numbers: {geez_numbers}, English: {english_letters}, Total: {total_chars}")
+        logger.info(f"🔤 Ratios - Amharic: {amharic_letter_ratio:.2f}, Numbers: {geez_number_ratio:.2f}, English: {english_ratio:.2f}")
+        
+        return has_meaningful_amharic
+
+    async def extract_with_easyocr(self, image_bytes):
+        """Extract text using EasyOCR (better for CJK languages and blurry images)"""
+        if not self.easyocr_available:
+            return ""
+        
+        try:
+            import easyocr
+            loop = asyncio.get_event_loop()
+            
+            # Read image directly from bytes
+            image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+            
+            if image is None:
+                logger.error("❌ Failed to decode image for EasyOCR")
+                return ""
+            
+            # Perform OCR with paragraph detection
+            results = await loop.run_in_executor(
+                thread_pool,
+                lambda: self.easyocr_reader.readtext(
+                    image, 
+                    paragraph=True,  # Group text into paragraphs
+                    detail=0,  # Return only text, no bounding boxes or confidence
+                    batch_size=4  # Process in batches for better performance
+                )
+            )
+            
+            # Combine results with proper spacing
+            text = '\n'.join([str(item) for item in results if item])
+            
+            logger.info(f"🔤 EasyOCR extracted {len(text)} characters")
+            return text
+            
+        except Exception as e:
+            logger.error(f"EasyOCR extraction failed: {e}")
+            return ""
+
     def calculate_text_confidence(self, text, lang_used):
         """Enhanced confidence score calculation for OCR result"""
         if not text:
@@ -411,9 +528,22 @@ class OCRProcessor:
         unique_chars = len(set(text))
         diversity_confidence = min(unique_chars / 10.0, 1.0)
         
-        # Language-specific confidence if available
+        # Language-specific confidence
         if LANGUAGE_SUPPORT_AVAILABLE:
             detected_lang, lang_confidence = detect_language_with_fallback(text)
+            
+            # HEAVY penalties for language mismatches
+            if 'amh' in lang_used and detected_lang == 'en':
+                lang_confidence = lang_confidence * 0.1  # Very heavy penalty for using Amharic on English text
+                logger.info(f"⚠️  VERY HEAVY penalty for language mismatch (Amharic OCR on English text): {lang_confidence:.2f}")
+            elif 'eng' in lang_used and detected_lang == 'am':
+                lang_confidence = lang_confidence * 0.3  # Heavy penalty for using English on Amharic text
+                logger.info(f"⚠️  Heavy penalty for language mismatch (English OCR on Amharic text): {lang_confidence:.2f}")
+            
+            # Bonus for correct language detection
+            if ('amh' in lang_used and detected_lang == 'am') or ('eng' in lang_used and detected_lang == 'en'):
+                lang_confidence = min(lang_confidence + 0.2, 1.0)  # Bonus for correct language
+                logger.info(f"🎯 Bonus for correct language detection: {lang_confidence:.2f}")
         else:
             lang_confidence = 0.5
         
@@ -425,9 +555,9 @@ class OCRProcessor:
         
         # Combined confidence with weights
         total_confidence = (
-            length_confidence * 0.25 + 
-            diversity_confidence * 0.25 + 
-            lang_confidence * 0.30 +
+            length_confidence * 0.20 + 
+            diversity_confidence * 0.20 + 
+            lang_confidence * 0.40 +  # Increased weight for language confidence
             word_confidence * 0.20 -
             garbage_penalty
         )
@@ -523,7 +653,7 @@ class OCRProcessor:
         
         return f"🌍 {supported_count}+ languages supported, {available_count} available ({engines})"
 
-# Global instance
+# Create global instance AFTER the class is fully defined
 ocr_processor = OCRProcessor()
 
 class PerformanceMonitor:

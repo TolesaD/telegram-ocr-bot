@@ -375,7 +375,7 @@ def get_language_confidence(text, language):
         return min(unique_chars / total_chars, 0.8)
 
 def detect_primary_language(text):
-    """Enhanced primary language detection"""
+    """Enhanced primary language detection with better Amharic support"""
     if not text or len(text.strip()) < 3:
         return 'unknown'
     
@@ -385,8 +385,15 @@ def detect_primary_language(text):
     # Count English letters
     english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
     
-    # Count Chinese/Japanese/Korean characters
-    cjk_chars = sum(1 for c in text if '\u4E00' <= c <= '\u9FFF')
+    # Count common English words to reduce false positives
+    common_english_words = ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 
+                           'can', 'her', 'was', 'one', 'our', 'out', 'get', 'has', 
+                           'him', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 
+                           'way', 'who', 'boy', 'did', 'its', 'let', 'put', 'say', 
+                           'she', 'too', 'use', 'that', 'with', 'this', 'from', 'have']
+    
+    text_lower = text.lower()
+    english_word_count = sum(1 for word in common_english_words if word in text_lower)
     
     total_chars = len(text)
     
@@ -395,16 +402,16 @@ def detect_primary_language(text):
     
     amharic_ratio = amharic_chars / total_chars
     english_ratio = english_chars / total_chars
-    cjk_ratio = cjk_chars / total_chars
     
-    # Enhanced language determination
-    if cjk_ratio > 0.3:
-        return 'zh'  # Default to Chinese for CJK
-    elif amharic_ratio > 0.2:
-        return 'am'
-    elif english_ratio > 0.5:
+    # Enhanced language determination - more strict for Amharic
+    # If there are English words and high English ratio, prioritize English
+    if english_word_count >= 2 and english_ratio > 0.4:
         return 'en'
-    elif english_ratio > 0.3 or amharic_ratio > 0.1:
+    elif amharic_ratio > 0.25:  # Higher threshold for Amharic to reduce false positives
+        return 'am'
+    elif english_ratio > 0.6:
+        return 'en'
+    elif english_ratio > 0.4 or amharic_ratio > 0.1:
         return 'mixed'
     else:
         # Try to detect script for other languages
