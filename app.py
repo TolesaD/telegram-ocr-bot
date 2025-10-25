@@ -332,7 +332,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle image messages with better timeout handling"""
+    """Handle image messages"""
     try:
         message = update.message
         if not message.photo:
@@ -341,28 +341,17 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         processing_msg = await message.reply_text("🔄 Processing your image...")
         
-        # Download image with timeout
+        # Download image
         photo = message.photo[-1]
         photo_file = await photo.get_file()
+        photo_bytes = await photo_file.download_as_bytearray()
         
-        # Download with timeout
-        try:
-            photo_bytes = await asyncio.wait_for(
-                photo_file.download_as_bytearray(),
-                timeout=10.0  # 10 second download timeout
-            )
-        except asyncio.TimeoutError:
-            await processing_msg.edit_text("❌ Image download timed out. Please try again.")
-            return
-        
-        # Extract text with progress update
-        await processing_msg.edit_text("🔍 Extracting text from image...")
-        
+        # Extract text
         extracted_text = await ocr_processor.extract_text_optimized(bytes(photo_bytes))
         
-        if not extracted_text or "No readable text" in extracted_text or "timed out" in extracted_text.lower():
+        if not extracted_text or "No readable text" in extracted_text:
             await processing_msg.edit_text(
-                "❌ No readable text found or processing timed out.\n\nTry with a clearer, smaller image with better lighting."
+                "❌ No readable text found.\n\nTry with a clearer image with better lighting."
             )
             return
         
@@ -377,7 +366,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Format text
         formatted_text = TextFormatter.format_text(extracted_text, text_format)
         
-        # LANGUAGE DETECTION
+        # LANGUAGE DETECTION - ADDED HERE
         if LANGUAGE_SUPPORT_AVAILABLE:
             detected_lang = detect_primary_language(extracted_text)
             lang_name = get_language_name(detected_lang)
@@ -388,12 +377,12 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send result with language info
         if text_format == 'html':
             await processing_msg.edit_text(
-                f"✅ Text Extracted{language_info} (HTML Format)\n\n{formatted_text}",
+                f"✅ **Text Extracted**{language_info} (HTML Format)\n\n{formatted_text}",
                 parse_mode='HTML'
             )
         else:
             await processing_msg.edit_text(
-                f"✅ Text Extracted{language_info}\n\n{formatted_text}",
+                f"✅ **Text Extracted**{language_info}\n\n{formatted_text}",
                 parse_mode='Markdown'
             )
         
@@ -409,12 +398,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error logging request: {e}")
             
-    except asyncio.TimeoutError:
-        logger.error("Overall image processing timeout")
-        try:
-            await update.message.reply_text("❌ Processing timed out. Please try with a smaller image.")
-        except:
-            pass
     except Exception as e:
         logger.error(f"Image processing error: {e}")
         try:
