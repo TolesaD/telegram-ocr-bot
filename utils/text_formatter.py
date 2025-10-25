@@ -5,14 +5,16 @@ from typing import List, Dict
 
 class TextFormatter:
     """
-    Smart text formatter that maintains paragraph structure
-    and improves readability while preserving meaning
+    Production text formatter with intelligent formatting options
     """
     
     @staticmethod
     def format_plain(text: str) -> str:
         """
-        Clean plain text with proper paragraph structure
+        Clean plain text formatting
+        - Preserves paragraph structure
+        - Maintains readable formatting
+        - Fixes common OCR issues
         """
         if not text:
             return ""
@@ -23,7 +25,7 @@ class TextFormatter:
         
         for paragraph in paragraphs:
             if paragraph.strip():
-                # Clean the paragraph while preserving meaning
+                # Clean each paragraph
                 cleaned_paragraph = TextFormatter._clean_paragraph(paragraph)
                 if cleaned_paragraph:
                     cleaned_paragraphs.append(cleaned_paragraph)
@@ -34,33 +36,35 @@ class TextFormatter:
     @staticmethod
     def _clean_paragraph(paragraph: str) -> str:
         """Clean a single paragraph while preserving meaning"""
-        # Split into lines and clean each line
+        # Split into lines and clean
         lines = paragraph.split('\n')
         cleaned_lines = []
         
         for line in lines:
-            cleaned_line = line.strip()
-            if cleaned_line:
-                # Fix common OCR issues without changing meaning
-                cleaned_line = re.sub(r'\s+', ' ', cleaned_line)  # Normalize spaces
-                cleaned_line = TextFormatter._fix_bullets(cleaned_line)  # Fix bullet points
-                cleaned_lines.append(cleaned_line)
+            line = line.strip()
+            if line:
+                # Fix common OCR errors
+                line = re.sub(r'\s+', ' ', line)  # Normalize spaces
+                line = TextFormatter._fix_bullets(line)  # Fix bullet points
+                line = TextFormatter._fix_common_errors(line)  # Fix common OCR errors
+                cleaned_lines.append(line)
         
-        # Join lines with spaces to form a proper paragraph
+        # Join lines to form a coherent paragraph
         return ' '.join(cleaned_lines)
     
     @staticmethod
     def _fix_bullets(line: str) -> str:
-        """Fix common bullet point OCR issues"""
-        bullet_fixes = [
+        """Fix bullet point detection issues"""
+        bullet_patterns = [
             (r'^[eE]\s+', '• '),
             (r'^[oO0]\s+', '• '),
             (r'^[·●○▪■▶➢✓✔→\-]\s*', '• '),
             (r'^\.\s+', '• '),
             (r'^\*\s+', '• '),
+            (r'^>\s+', '• '),
         ]
         
-        for pattern, replacement in bullet_fixes:
+        for pattern, replacement in bullet_patterns:
             if re.match(pattern, line):
                 line = re.sub(pattern, replacement, line)
                 break
@@ -68,9 +72,28 @@ class TextFormatter:
         return line
     
     @staticmethod
+    def _fix_common_errors(line: str) -> str:
+        """Fix common OCR character errors"""
+        corrections = [
+            (r'\|\s*', 'I'),
+            (r'\[\s*', 'I'),
+            (r'\]\s*', 'I'),
+            (r'\(\s*', 'I'),
+            (r'\)\s*', 'I'),
+            (r'\.\s*\.\s*\.', '...'),
+        ]
+        
+        for pattern, replacement in corrections:
+            line = re.sub(pattern, replacement, line)
+        
+        return line
+    
+    @staticmethod
     def format_html(text: str) -> str:
         """
-        HTML format that preserves paragraph structure
+        HTML formatting for easy copying
+        - Preserves all formatting
+        - Easy to copy and paste
         """
         if not text:
             return ""
@@ -94,7 +117,8 @@ class TextFormatter:
     @staticmethod
     def format_preserved(text: str) -> str:
         """
-        Maximum preservation - returns text exactly as OCR extracted it
+        Maximum preservation - no changes to extracted text
+        Returns exactly what OCR extracted
         """
         return text if text else ""
     
@@ -102,21 +126,26 @@ class TextFormatter:
     def format_structured(text: str) -> str:
         """
         Intelligently structured format
-        - Maintains paragraph structure
-        - Fixes common OCR errors
-        - Improves readability while preserving meaning
+        - Best readability while preserving structure
+        - Recommended for most users
         """
         if not text:
             return ""
         
-        return TextFormatter.format_plain(text)  # Use the same logic as plain format
+        return TextFormatter.format_plain(text)
     
     @staticmethod
     def format_text(text: str, format_type: str = 'structured') -> str:
         """
         Main formatting function
         
-        Recommended format_type: 'structured' for best readability
+        Args:
+            text: Extracted text to format
+            format_type: 
+                - 'structured': Best readability (recommended)
+                - 'plain': Clean text
+                - 'preserved': No changes
+                - 'html': HTML format
         """
         if not text:
             return ""
@@ -139,7 +168,7 @@ class TextFormatter:
     
     @staticmethod
     def split_long_message(text: str, max_length: int = 4000) -> List[str]:
-        """Split long messages while preserving paragraph structure"""
+        """Split long messages for Telegram while preserving paragraphs"""
         if len(text) <= max_length:
             return [text]
         
@@ -149,7 +178,7 @@ class TextFormatter:
         current_part = ""
         
         for paragraph in paragraphs:
-            # If adding this paragraph would exceed limit, start new part
+            # Check if adding this paragraph would exceed limit
             if current_part and len(current_part) + len(paragraph) + 4 > max_length:
                 parts.append(current_part.strip())
                 current_part = paragraph
@@ -159,6 +188,7 @@ class TextFormatter:
                 else:
                     current_part = paragraph
         
+        # Add the final part
         if current_part:
             parts.append(current_part.strip())
         
@@ -166,24 +196,27 @@ class TextFormatter:
 
     @staticmethod
     def analyze_text_structure(text: str) -> Dict:
-        """Analyze text structure and quality"""
+        """Analyze text structure for quality reporting"""
         if not text:
             return {}
         
         paragraphs = text.split('\n\n')
         total_paragraphs = len([p for p in paragraphs if p.strip()])
         
-        # Count words for readability assessment
+        # Count words and lines
         words = text.split()
-        word_count = len(words)
+        lines = text.split('\n')
+        non_empty_lines = [line for line in lines if line.strip()]
         
-        # Calculate average words per paragraph
+        # Calculate metrics
+        word_count = len(words)
+        line_count = len(non_empty_lines)
         avg_words_per_paragraph = word_count / total_paragraphs if total_paragraphs > 0 else 0
         
         return {
             'total_paragraphs': total_paragraphs,
             'word_count': word_count,
+            'line_count': line_count,
             'avg_words_per_paragraph': round(avg_words_per_paragraph, 1),
-            'readability_score': min(100, int(avg_words_per_paragraph * 2)),
-            'structure_quality': 'Good' if avg_words_per_paragraph > 10 else 'Needs Improvement'
+            'structure_quality': 'Excellent' if avg_words_per_paragraph > 15 else 'Good' if avg_words_per_paragraph > 8 else 'Fair'
         }
