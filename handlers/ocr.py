@@ -272,7 +272,17 @@ async def handle_ocr_error(error):
     error_str = str(error)
     logger.error(f"Production OCR Error: {error_str}")
     
-    if "timeout" in error_str.lower():
+    if "OCR system is currently unavailable" in error_str:
+        return (
+            "❌ *OCR System Temporarily Unavailable*\n\n"
+            "The text extraction service is currently experiencing issues.\n\n"
+            "🔄 *Please try:*\n"
+            "• Waiting a few moments and trying again\n"
+            "• Sending a different image\n"
+            "• Checking your internet connection\n\n"
+            "⚡ The system should recover automatically shortly."
+        )
+    elif "timeout" in error_str.lower():
         return (
             "⏰ *Processing Timeout*\n\n"
             "The system took too long to process your image.\n\n"
@@ -283,6 +293,7 @@ async def handle_ocr_error(error):
             "• Higher contrast images\n\n"
             "🔄 Please try again with an optimized image."
         )
+        
     elif "no readable text" in error_str.lower():
         return (
             "🔍 *Text Detection Failed*\n\n"
