@@ -1,5 +1,5 @@
 # ocr_engine/language_support.py
-# Universal language support that works with any installed Tesseract languages
+# Enhanced universal language support with better OCR engines
 
 # Comprehensive language mapping
 LANGUAGE_MAPPING = {
@@ -33,10 +33,11 @@ LANGUAGE_MAPPING = {
     'mg': 'Malagasy', 'mt': 'Maltese', 'ny': 'Chichewa', 'sm': 'Samoan',
     'sn': 'Shona', 'so': 'Somali', 'st': 'Sesotho', 'su': 'Sundanese',
     'sw': 'Swahili', 'tg': 'Tajik', 'tk': 'Turkmen', 'uz': 'Uzbek',
-    'xh': 'Xhosa', 'yi': 'Yiddish', 'yo': 'Yoruba', 'zu': 'Zulu'
+    'xh': 'Xhosa', 'yi': 'Yiddish', 'yo': 'Yoruba', 'zu': 'Zulu',
+    'unknown': 'Unknown'
 }
 
-# Tesseract language codes mapping
+# Enhanced Tesseract language codes mapping
 TESSERACT_LANGUAGES = {
     'af': 'afr', 'am': 'amh', 'ar': 'ara', 'as': 'asm', 'az': 'aze',
     'be': 'bel', 'bg': 'bul', 'bn': 'ben', 'bo': 'bod', 'bs': 'bos',
@@ -58,10 +59,10 @@ TESSERACT_LANGUAGES = {
     'sw': 'swa', 'ta': 'tam', 'te': 'tel', 'tg': 'tgk', 'th': 'tha',
     'tk': 'tuk', 'tl': 'tgl', 'tr': 'tur', 'tt': 'tat', 'ug': 'uig',
     'uk': 'ukr', 'ur': 'urd', 'uz': 'uzb', 'vi': 'vie', 'xh': 'xho',
-    'yi': 'yid', 'yo': 'yor', 'zh': 'chi_sim', 'zu': 'zul'
+    'yi': 'yid', 'yo': 'yor', 'zh': 'chi_sim+chi_tra', 'zu': 'zul'
 }
 
-# Script families for optimal processing
+# Enhanced script families for optimal processing
 SCRIPT_FAMILIES = {
     'Latin': ['en', 'es', 'fr', 'de', 'it', 'pt', 'pl', 'nl', 'sv', 'tr', 'vi', 'ro', 'nl', 'da', 'no', 'fi', 'cs', 'hu', 'sk', 'sl', 'hr', 'bs', 'sr', 'et', 'lv', 'lt', 'mt', 'ga', 'gd', 'cy', 'ca', 'gl', 'eu', 'is', 'fo', 'ms', 'id', 'sw', 'so', 'ha', 'yo', 'ig', 'af', 'zu', 'xh', 'st', 'tn', 'ts', 'ss', 've', 'nr', 'nso'],
     'Cyrillic': ['ru', 'uk', 'be', 'bg', 'sr', 'mk', 'mn', 'kk', 'ky', 'tg', 'uz', 'tt'],
@@ -112,22 +113,19 @@ def get_tesseract_code(lang_code):
     # Ultimate fallback
     return 'eng'
 
-def get_amharic_config() -> str:
-    """Get optimized Tesseract config for Amharic"""
-    return '--oem 1 --psm 6 -c preserve_interword_spaces=1'
-
 def get_ocr_config(language, script_family, image_size=None):
     """Get optimized OCR configuration for language and script"""
-    base_config = "--oem 3 --dpi 300 -c tessedit_do_invert=0"
+    # Enhanced base config for better bullet and paragraph detection
+    base_config = "--oem 3 --dpi 300 -c tessedit_do_invert=0 -c preserve_interword_spaces=1"
     
-    # Script-specific configurations
+    # Enhanced script-specific configurations
     script_configs = {
-        'Latin': "--psm 6 -c preserve_interword_spaces=1",
+        'Latin': "--psm 6 -c textord_min_linesize=1.0 -c textord_space_size_is_variable=1",
         'Cyrillic': "--psm 6 -c textord_min_linesize=1.5",
         'Arabic': "--psm 6 -c textord_min_linesize=2.0 -c preserve_interword_spaces=1 -c textord_old_baselines=1",
-        'Chinese': "--psm 6 -c textord_min_linesize=2.5 -c preserve_interword_spaces=0",
-        'Japanese': "--psm 6 -c textord_min_linesize=2.5 -c preserve_interword_spaces=0",
-        'Korean': "--psm 6 -c textord_min_linesize=2.0 -c preserve_interword_spaces=0",
+        'Chinese': "--psm 6 -c textord_min_linesize=2.5 -c preserve_interword_spaces=0 -c chop_enable=1",
+        'Japanese': "--psm 6 -c textord_min_linesize=2.5 -c preserve_interword_spaces=0 -c chop_enable=1",
+        'Korean': "--psm 6 -c textord_min_linesize=2.0 -c preserve_interword_spaces=0 -c chop_enable=1",
         'Ethiopic': "--psm 6 -c textord_min_linesize=1.8 -c preserve_interword_spaces=1",
         'Thai': "--psm 6 -c textord_min_linesize=2.0 -c preserve_interword_spaces=1",
         'Devanagari': "--psm 6 -c textord_min_linesize=2.0 -c preserve_interword_spaces=1",
@@ -142,33 +140,34 @@ def get_ocr_config(language, script_family, image_size=None):
     if image_size:
         area = image_size[0] * image_size[1]
         if area > 2000000:  # Large images
-            config = config.replace("--psm 6", "--psm 4")
+            config = config.replace("--psm 6", "--psm 4")  # Assume uniform block of text
         elif area < 100000:  # Small images
-            config = config.replace("--psm 6", "--psm 8")
+            config = config.replace("--psm 6", "--psm 8")  # Single word
     
     return config
 
 def detect_script_from_text(text):
-    """Enhanced script detection from text"""
+    """Enhanced script detection from text with better accuracy"""
     if not text:
         return 'Latin'
     
     script_scores = {}
     
-    # Define character ranges for each script
+    # Enhanced character ranges for each script
     script_ranges = {
-        'Latin': lambda c: c.isascii() and c.isalpha(),
+        'Latin': lambda c: (c.isascii() and c.isalpha()) or c in '•·∙○●▪▫',
         'Cyrillic': lambda c: '\u0400' <= c <= '\u04FF',
-        'Arabic': lambda c: '\u0600' <= c <= '\u06FF',
-        'Devanagari': lambda c: '\u0900' <= c <= '\u097F',
+        'Arabic': lambda c: '\u0600' <= c <= '\u06FF' or '\u0750' <= c <= '\u077F',
+        'Devanagari': lambda c: '\u0900' <= c <= '\u097F' or '\uA8E0' <= c <= '\uA8FF',
         'Bengali': lambda c: '\u0980' <= c <= '\u09FF',
-        'Chinese': lambda c: '\u4E00' <= c <= '\u9FFF',
-        'Japanese': lambda c: ('\u3040' <= c <= '\u309F' or '\u30A0' <= c <= '\u30FF' or '\u4E00' <= c <= '\u9FFF'),
-        'Korean': lambda c: '\uAC00' <= c <= '\uD7A3',
-        'Ethiopic': lambda c: '\u1200' <= c <= '\u137F',
+        'Chinese': lambda c: '\u4E00' <= c <= '\u9FFF' or '\u3400' <= c <= '\u4DBF',
+        'Japanese': lambda c: ('\u3040' <= c <= '\u309F' or '\u30A0' <= c <= '\u30FF' or 
+                              '\u4E00' <= c <= '\u9FFF' or '\u31F0' <= c <= '\u31FF'),
+        'Korean': lambda c: '\uAC00' <= c <= '\uD7A3' or '\u1100' <= c <= '\u11FF',
+        'Ethiopic': lambda c: '\u1200' <= c <= '\u137F' or '\u1380' <= c <= '\u139F',
         'Thai': lambda c: '\u0E00' <= c <= '\u0E7F',
         'Hebrew': lambda c: '\u0590' <= c <= '\u05FF',
-        'Greek': lambda c: '\u0370' <= c <= '\u03FF',
+        'Greek': lambda c: '\u0370' <= c <= '\u03FF' or '\u1F00' <= c <= '\u1FFF',
         'Tamil': lambda c: '\u0B80' <= c <= '\u0BFF',
         'Telugu': lambda c: '\u0C00' <= c <= '\u0C7F',
         'Kannada': lambda c: '\u0C80' <= c <= '\u0CFF',
@@ -176,7 +175,7 @@ def detect_script_from_text(text):
         'Sinhala': lambda c: '\u0D80' <= c <= '\u0DFF',
         'Burmese': lambda c: '\u1000' <= c <= '\u109F',
         'Georgian': lambda c: '\u10A0' <= c <= '\u10FF',
-        'Armenian': lambda c: '\u0530' <= c <= '\u058F'
+        'Armenian': lambda c: '\u0530' <= c <= '\u058F' or '\uFB00' <= c <= '\uFB17'
     }
     
     for char in text:
@@ -195,11 +194,11 @@ def is_amharic_character(char):
     return '\u1200' <= char <= '\u137F'
 
 def validate_ocr_result(text, expected_language):
-    """Validate OCR result quality"""
+    """Enhanced OCR result validation"""
     if not text or len(text.strip()) < 3:
         return False, "Text too short"
     
-    # Check character diversity
+    # Enhanced character diversity check
     unique_chars = len(set(text))
     if unique_chars < 2:
         return False, "Low character diversity"
@@ -209,24 +208,24 @@ def validate_ocr_result(text, expected_language):
     if len(clean_text) < 2:
         return False, "Not enough content"
     
-    # Count alphanumeric characters
-    alpha_chars = sum(1 for c in clean_text if c.isalnum())
+    # Enhanced alphanumeric characters count
+    alpha_chars = sum(1 for c in clean_text if c.isalnum() or c in '•·∙○●▪▫-')
     alpha_ratio = alpha_chars / len(clean_text)
     
-    if alpha_ratio < 0.3:  # Too many special characters
+    if alpha_ratio < 0.2:  # More lenient threshold
         return False, "Too many non-alphanumeric characters"
     
     return True, "Valid"
 
 def get_fallback_strategy(primary_lang):
-    """Get fallback strategy for language"""
+    """Get enhanced fallback strategy for language"""
     script_family = get_script_family(primary_lang)
     
     fallbacks = {
         'Latin': ['eng', 'spa', 'fra', 'deu', 'ita'],
         'Cyrillic': ['rus', 'ukr', 'bul'],
         'Arabic': ['ara', 'fas', 'urd'],
-        'Chinese': ['chi_sim', 'chi_tra', 'eng'],
+        'Chinese': ['chi_sim+chi_tra', 'eng'],
         'Japanese': ['jpn', 'eng'],
         'Korean': ['kor', 'eng'],
         'Ethiopic': ['amh', 'eng'],
@@ -240,7 +239,7 @@ def get_fallback_strategy(primary_lang):
     return fallbacks.get(script_family, ['eng'])
 
 def clean_ocr_text(text, language):
-    """Intelligent text cleaning based on language"""
+    """Enhanced intelligent text cleaning that preserves structure"""
     if not text:
         return ""
     
@@ -252,22 +251,42 @@ def clean_ocr_text(text, language):
         if not line:
             continue
             
-        # Remove lines that are mostly garbage
+        # Enhanced garbage detection
         if is_garbage_line(line, language):
             continue
             
-        cleaned_lines.append(line)
+        # Preserve bullet points and special characters
+        cleaned_line = preserve_special_characters(line)
+        cleaned_lines.append(cleaned_line)
     
-    # Remove duplicate consecutive lines while preserving order
+    # Enhanced duplicate removal while preserving structure
     unique_lines = []
     for i, line in enumerate(cleaned_lines):
-        if i == 0 or line != cleaned_lines[i-1]:
+        if i == 0 or line != cleaned_lines[i-1] or is_important_line(line):
             unique_lines.append(line)
     
     return '\n'.join(unique_lines)
 
+def preserve_special_characters(line):
+    """Preserve bullet points and special formatting characters"""
+    # Common bullet characters to preserve
+    bullets = ['•', '·', '∙', '○', '●', '▪', '▫', '-', '*', '→', '⇒']
+    
+    # If line starts with a bullet, preserve it
+    if line and line[0] in bullets:
+        return line
+    return line
+
+def is_important_line(line):
+    """Check if line should be preserved even if duplicate"""
+    # Lines with bullets, numbers, or specific patterns are important
+    bullets = ['•', '·', '∙', '○', '●', '▪', '▫']
+    if line and (line[0] in bullets or line[0].isdigit()):
+        return True
+    return False
+
 def is_garbage_line(line, language):
-    """Check if line is likely garbage"""
+    """Enhanced garbage line detection"""
     if len(line) < 2:
         return True
     
@@ -278,24 +297,24 @@ def is_garbage_line(line, language):
         # For CJK, count any non-ASCII, non-punctuation as meaningful
         meaningful_chars = sum(1 for c in line if not c.isascii() and not c.isspace() and not c in '.,!?;:-()[]{}')
     else:
-        # For other scripts, count alphanumeric characters
-        meaningful_chars = sum(1 for c in line if c.isalnum())
+        # For other scripts, count alphanumeric characters and bullets
+        meaningful_chars = sum(1 for c in line if c.isalnum() or c in '•·∙○●▪▫')
     
     total_chars = len(line)
     
     if total_chars == 0:
         return True
     
-    # Different thresholds for different scripts
+    # Enhanced thresholds for different scripts
     min_meaningful_ratio = {
-        'Chinese': 0.2, 'Japanese': 0.2, 'Korean': 0.2,
-        'Arabic': 0.3, 'Hebrew': 0.3,
-        'Latin': 0.4, 'Cyrillic': 0.4, 'Greek': 0.4,
-        'Devanagari': 0.3, 'Bengali': 0.3, 'Thai': 0.3,
-        'Ethiopic': 0.3
+        'Chinese': 0.15, 'Japanese': 0.15, 'Korean': 0.15,
+        'Arabic': 0.25, 'Hebrew': 0.25,
+        'Latin': 0.3, 'Cyrillic': 0.3, 'Greek': 0.3,
+        'Devanagari': 0.25, 'Bengali': 0.25, 'Thai': 0.25,
+        'Ethiopic': 0.25
     }
     
-    threshold = min_meaningful_ratio.get(script_family, 0.4)
+    threshold = min_meaningful_ratio.get(script_family, 0.3)
     return (meaningful_chars / total_chars) < threshold
 
 def get_language_from_script(script):
@@ -328,15 +347,15 @@ def get_language_name(code):
     """Get language name from code"""
     return LANGUAGE_MAPPING.get(code, 'Unknown')
 
-# Language detection confidence thresholds
+# Enhanced language detection confidence thresholds
 CONFIDENCE_THRESHOLDS = {
-    'am': 0.3,  # 30% Amharic characters
-    'en': 0.6,  # 60% English characters
+    'am': 0.2,  # 20% Amharic characters
+    'en': 0.5,  # 50% English characters
     'mixed': 0.1  # 10% mixed content
 }
 
 def get_language_confidence(text, language):
-    """Calculate confidence level for detected language"""
+    """Enhanced confidence level for detected language"""
     if not text:
         return 0.0
     
@@ -351,10 +370,12 @@ def get_language_confidence(text, language):
         english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
         return english_chars / total_chars
     else:
-        return 0.5  # Default confidence for mixed/unknown
+        # For mixed/unknown, use character diversity
+        unique_chars = len(set(text))
+        return min(unique_chars / total_chars, 0.8)
 
 def detect_primary_language(text):
-    """Detect the primary language of text"""
+    """Enhanced primary language detection"""
     if not text or len(text.strip()) < 3:
         return 'unknown'
     
@@ -364,6 +385,9 @@ def detect_primary_language(text):
     # Count English letters
     english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
     
+    # Count Chinese/Japanese/Korean characters
+    cjk_chars = sum(1 for c in text if '\u4E00' <= c <= '\u9FFF')
+    
     total_chars = len(text)
     
     if total_chars == 0:
@@ -371,14 +395,21 @@ def detect_primary_language(text):
     
     amharic_ratio = amharic_chars / total_chars
     english_ratio = english_chars / total_chars
+    cjk_ratio = cjk_chars / total_chars
     
-    # Determine primary language
-    if amharic_ratio > 0.3:
+    # Enhanced language determination
+    if cjk_ratio > 0.3:
+        return 'zh'  # Default to Chinese for CJK
+    elif amharic_ratio > 0.2:
         return 'am'
-    elif english_ratio > 0.7:
+    elif english_ratio > 0.5:
         return 'en'
-    else:
+    elif english_ratio > 0.3 or amharic_ratio > 0.1:
         return 'mixed'
+    else:
+        # Try to detect script for other languages
+        script = detect_script_from_text(text)
+        return get_language_from_script(script)
 
 def validate_amharic_text(text):
     """Validate if text contains meaningful Amharic content"""
@@ -392,8 +423,8 @@ def validate_amharic_text(text):
     if total_chars < 5:
         return False
     
-    # At least 20% should be Amharic characters to be considered valid Amharic
-    return (amharic_chars / total_chars) > 0.2
+    # More lenient threshold for Amharic
+    return (amharic_chars / total_chars) > 0.15
 
 def validate_english_text(text):
     """Validate if text contains meaningful English content"""
@@ -407,5 +438,25 @@ def validate_english_text(text):
     if total_chars < 5:
         return False
     
-    # At least 60% should be English letters to be considered valid English
-    return (english_chars / total_chars) > 0.6
+    # More lenient threshold for English
+    return (english_chars / total_chars) > 0.4
+
+def detect_language_with_fallback(text):
+    """Enhanced language detection with multiple fallbacks"""
+    if not text:
+        return 'unknown', 0.0
+    
+    # Try primary detection first
+    primary_lang = detect_primary_language(text)
+    confidence = get_language_confidence(text, primary_lang)
+    
+    # If confidence is low, try script-based detection
+    if confidence < 0.3:
+        script = detect_script_from_text(text)
+        script_lang = get_language_from_script(script)
+        script_confidence = get_language_confidence(text, script_lang)
+        
+        if script_confidence > confidence:
+            return script_lang, script_confidence
+    
+    return primary_lang, confidence
