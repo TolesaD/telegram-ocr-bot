@@ -13,7 +13,7 @@ import re
 logger = logging.getLogger(__name__)
 
 class HybridOCRProcessor:
-    """Hybrid OCR processor with strict language validation"""
+    """Hybrid OCR processor with improved language validation"""
     
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=2)
@@ -45,7 +45,7 @@ class HybridOCRProcessor:
             'standard': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
             'document': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
             'single_line': '--oem 3 --psm 7 -c preserve_interword_spaces=1',
-            'blurry': '--oem 3 --psm 6 -c textord_min_linesize=0.8',
+            'blurry': '--oem 3 --psm 6 -c textord_min_linesize=0.5',
         }
         
         logger.info(f"✅ Hybrid OCR initialized for {self.environment} environment")
@@ -136,20 +136,22 @@ class HybridOCRProcessor:
         return best_text
     
     async def _local_extraction(self, image: np.ndarray, quality_info: dict) -> str:
-        """Local extraction with strict language validation"""
+        """Local extraction with improved language validation"""
         loop = asyncio.get_event_loop()
         
-        config = self.universal_configs['standard']
+        # Use blurry config for low-quality images
+        if quality_info['blur_score'] < 500:
+            config = self.universal_configs['blurry']
+        else:
+            config = self.universal_configs['standard']
         
-        # Try both languages with strict validation
+        # Store all valid results
+        valid_results = []
+        
         extraction_attempts = [
-            # English first with strict validation
             ('eng', 'English', self._is_definitely_english),
-            # Amharic with strict validation
             ('amh', 'Amharic', self._is_definitely_amharic),
-            # Combined with careful validation
-            ('eng+amh', 'English+Amharic', self._is_reasonable_mixed_text),
-            ('amh+eng', 'Amharic+English', self._is_reasonable_mixed_text),
+            ('eng+amh', 'Mixed', self._is_reasonable_mixed_text),
         ]
         
         for lang, lang_name, validator in extraction_attempts:
@@ -168,22 +170,31 @@ class HybridOCRProcessor:
                     actual_lang = self._detect_primary_language(text)
                     logger.info(f"🔧 {lang_name}: {len(text.strip())} chars -> Actually: {actual_lang}")
                     
-                    # STRICT validation: text must match what we tried to extract
-                    if validator(text) and actual_lang in lang_name:
+                    # Use validator - removed the strict lang_name check
+                    if validator(text):
                         logger.info(f"✅ {lang_name} validation PASSED")
-                        return text.strip()
+                        valid_results.append((text.strip(), len(text.strip()), lang_name))
+                        
+                        # For English with good length, return immediately
+                        if lang_name == "English" and len(text.strip()) > 30:
+                            return text.strip()
                     else:
-                        logger.info(f"❌ {lang_name} validation FAILED - actually {actual_lang}")
+                        logger.info(f"❌ {lang_name} validation FAILED")
                         
             except Exception as e:
                 logger.debug(f"Local attempt {lang_name} failed: {e}")
                 continue
         
+        # Return the best valid result
+        if valid_results:
+            best_result = max(valid_results, key=lambda x: x[1])
+            return best_result[0]
+        
         return ""
     
     def _is_definitely_english(self, text: str) -> bool:
-        """STRICT English validation"""
-        if not text or len(text.strip()) < 10:
+        """Improved English validation for blurry images"""
+        if not text or len(text.strip()) < 8:  # Reduced minimum
             return False
         
         clean_text = text.strip()
@@ -195,29 +206,36 @@ class HybridOCRProcessor:
         if total_alpha == 0:
             return False
         
-        # Must be predominantly English (>80%)
+        # Reduced threshold for blurry images
         english_ratio = english_chars / total_alpha
-        if english_ratio < 0.8:
+        if english_ratio < 0.6:  # Reduced from 0.8
             return False
         
-        # Check for common English words
-        common_english_words = ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 'was', 'one', 'our', 'your', 'have', 'with', 'this', 'that', 'from']
+        # Expanded common English words list
+        common_english_words = [
+            'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 
+            'was', 'one', 'our', 'your', 'have', 'with', 'this', 'that', 'from',
+            'they', 'been', 'has', 'will', 'would', 'could', 'should', 'what',
+            'when', 'where', 'which', 'who', 'why', 'how', 'their', 'there',
+            'then', 'than', 'them', 'these', 'those', 'upon', 'into', 'about'
+        ]
         words = clean_text.lower().split()
+        
+        # More lenient: require only 1 common English word
         english_word_count = sum(1 for word in words if word in common_english_words)
-        
-        # Should have at least some common English words
-        if english_word_count < 2:
+        if english_word_count < 1:  # Reduced from 2
             return False
         
-        # Check for reasonable word lengths (English typically 2-10 chars)
-        avg_word_length = sum(len(word) for word in words) / len(words)
-        if avg_word_length < 2 or avg_word_length > 12:
-            return False
+        # More lenient word length check
+        if len(words) > 0:
+            avg_word_length = sum(len(word) for word in words) / len(words)
+            if avg_word_length < 1.8 or avg_word_length > 14:  # Wider range
+                return False
         
         return True
     
     def _is_definitely_amharic(self, text: str) -> bool:
-        """STRICT Amharic validation"""
+        """Amharic validation"""
         if not text or len(text.strip()) < 8:
             return False
         
@@ -230,7 +248,7 @@ class HybridOCRProcessor:
         if total_chars == 0:
             return False
         
-        # Must be predominantly Amharic (>40% Amharic characters)
+        # Must be predominantly Amharic
         amharic_ratio = amharic_chars / total_chars
         if amharic_ratio < 0.4:
             return False
@@ -239,7 +257,7 @@ class HybridOCRProcessor:
         if amharic_chars < 5:
             return False
         
-        # Check for Amharic-specific patterns (multiple consecutive Amharic chars)
+        # Check for Amharic-specific patterns
         amharic_sequences = re.findall(r'[\u1200-\u137F]{2,}', clean_text)
         if len(amharic_sequences) < 2:
             return False
@@ -302,7 +320,6 @@ class HybridOCRProcessor:
         english_ratio = english_chars / total_alpha
         amharic_ratio = amharic_chars / total_alpha
         
-        # Strict thresholds
         if amharic_ratio > 0.6:
             return "Amharic"
         elif english_ratio > 0.8:
