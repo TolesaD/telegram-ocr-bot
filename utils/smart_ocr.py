@@ -41,22 +41,22 @@ class SmartOCRProcessor:
             'blurry': '--oem 3 --psm 6 -c textord_old_baselines=1'
         }
         
-        # Language scripts grouped by writing system
+        # Language scripts grouped by writing system - REORDERED for priority
         self.language_scripts = {
-            'latin': ['eng', 'fra', 'spa', 'deu', 'ita', 'por', 'nld', 'swe', 'dan', 'nor', 'fin', 'pol', 'ces', 'hun', 'ron', 'hrv', 'srp', 'slk', 'slv', 'lav', 'lit', 'est', 'lav', 'glg', 'cat', 'eus'],
-            'cyrillic': ['rus', 'ukr', 'bul', 'bel', 'srp'],  # Serbian can be both
+            'ethiopic': ['amh', 'tir', 'orm'],  # HIGHEST PRIORITY - Amharic first
             'arabic': ['ara', 'fas', 'urd', 'uig'],
-            'devanagari': ['hin', 'nep', 'mar', 'san'],
-            'bengali': ['ben'],
             'chinese': ['chi_sim', 'chi_tra'],
             'japanese': ['jpn'],
             'korean': ['kor'],
-            'ethiopic': ['amh', 'tir', 'orm'],
+            'devanagari': ['hin', 'nep', 'mar', 'san'],
+            'bengali': ['ben'],
             'hebrew': ['heb'],
             'thai': ['tha'],
             'vietnamese': ['vie'],
+            'cyrillic': ['rus', 'ukr', 'bul', 'bel', 'srp'],
             'greek': ['ell'],
             'turkish': ['tur'],
+            'latin': ['eng', 'fra', 'spa', 'deu', 'ita', 'por', 'nld', 'swe', 'dan', 'nor', 'fin', 'pol', 'ces', 'hun', 'ron', 'hrv', 'srp', 'slk', 'slv', 'lav', 'lit', 'est', 'lav', 'glg', 'cat', 'eus'],  # LOWEST PRIORITY
         }
         
         logger.info(f"✅ Universal OCR Processor initialized with {len(self.available_languages)} languages")
@@ -165,7 +165,7 @@ class SmartOCRProcessor:
     
     async def _universal_language_extraction(self, image: np.ndarray, quality_info: dict) -> str:
         """Universal language extraction that handles all writing systems"""
-        loop = asyncio.get_event_loop()  # FIXED: Use get_event_loop() instead of get_executor()
+        loop = asyncio.get_event_loop()
         
         # Choose config based on image quality
         if quality_info['blur_score'] < 300:
@@ -176,7 +176,7 @@ class SmartOCRProcessor:
         # Strategy 1: Try script-based language groups (most effective)
         script_results = await self._try_script_based_extraction(image, base_config, loop)
         if script_results:
-            best_result = max(script_results, key=lambda x: x['score'])
+            best_result = self._select_best_script_result(script_results)
             if best_result['score'] > 0.7:  # High confidence
                 logger.info(f"🏆 Script-based winner: {best_result['script']} (score: {best_result['score']:.2f})")
                 return best_result['text']
@@ -197,6 +197,48 @@ class SmartOCRProcessor:
             return best_auto['text']
         
         return ""
+    
+    def _select_best_script_result(self, script_results: List[dict]) -> dict:
+        """Select the best script result with intelligent prioritization"""
+        if not script_results:
+            return None
+        
+        # Create script priority mapping (higher number = higher priority)
+        script_priority = {
+            'ethiopic': 100,    # Highest priority for Amharic
+            'arabic': 90,
+            'chinese': 85,
+            'japanese': 85,
+            'korean': 85,
+            'devanagari': 80,
+            'bengali': 80,
+            'hebrew': 75,
+            'thai': 70,
+            'vietnamese': 70,
+            'cyrillic': 60,
+            'greek': 55,
+            'turkish': 50,
+            'latin': 10,        # Lowest priority - English/Latin as last resort
+        }
+        
+        # Score each result with priority bonus
+        scored_results = []
+        for result in script_results:
+            base_score = result['score']
+            priority_bonus = script_priority.get(result['script'], 0) / 100.0
+            final_score = base_score + priority_bonus
+            
+            scored_results.append({
+                **result,
+                'final_score': final_score,
+                'priority_bonus': priority_bonus
+            })
+            
+            logger.info(f"📊 {result['script']}: base={base_score:.2f}, priority_bonus={priority_bonus:.2f}, final={final_score:.2f}")
+        
+        # Select the best result
+        best_result = max(scored_results, key=lambda x: x['final_score'])
+        return best_result
     
     async def _try_script_based_extraction(self, image: np.ndarray, base_config: str, loop) -> List[dict]:
         """Try extraction by language script groups"""
@@ -220,13 +262,17 @@ class SmartOCRProcessor:
                 if text and self._is_meaningful_text(text):
                     confidence = self._calculate_text_confidence(text, script_name)
                     if confidence > 0.3:  # Minimum confidence threshold
+                        # Calculate script-specific confidence
+                        script_confidence = self._calculate_script_specific_confidence(text, script_name)
+                        final_confidence = max(confidence, script_confidence)
+                        
                         results.append({
                             'script': script_name,
                             'text': text,
-                            'score': confidence,
+                            'score': final_confidence,
                             'languages': available_langs
                         })
-                        logger.info(f"📜 {script_name} script: {len(text.strip())} chars (score: {confidence:.2f})")
+                        logger.info(f"📜 {script_name} script: {len(text.strip())} chars (score: {final_confidence:.2f})")
                         
             except Exception as e:
                 logger.debug(f"Script {script_name} failed: {e}")
@@ -234,12 +280,44 @@ class SmartOCRProcessor:
         
         return results
     
+    def _calculate_script_specific_confidence(self, text: str, script_name: str) -> float:
+        """Calculate confidence specific to script type"""
+        clean_text = text.strip()
+        if not clean_text:
+            return 0.0
+        
+        base_score = 0.5
+        
+        # Script-specific character detection
+        if script_name == 'ethiopic':
+            # Count Amharic/Ethiopic characters
+            ethiopic_chars = sum(1 for c in clean_text if '\u1200' <= c <= '\u137F')
+            if ethiopic_chars > 0:
+                ethiopic_ratio = ethiopic_chars / len(clean_text)
+                base_score += min(ethiopic_ratio * 0.5, 0.3)  # Bonus for Ethiopic characters
+                
+        elif script_name == 'arabic':
+            # Count Arabic characters
+            arabic_chars = sum(1 for c in clean_text if '\u0600' <= c <= '\u06FF')
+            if arabic_chars > 0:
+                arabic_ratio = arabic_chars / len(clean_text)
+                base_score += min(arabic_ratio * 0.5, 0.3)
+                
+        elif script_name == 'chinese' or script_name == 'japanese':
+            # Count CJK characters
+            cjk_chars = sum(1 for c in clean_text if '\u4e00' <= c <= '\u9fff')
+            if cjk_chars > 0:
+                cjk_ratio = cjk_chars / len(clean_text)
+                base_score += min(cjk_ratio * 0.5, 0.3)
+        
+        return min(1.0, base_score)
+    
     async def _try_individual_languages(self, image: np.ndarray, base_config: str, loop) -> List[dict]:
         """Try individual major languages"""
         results = []
         
-        # Major languages to try individually
-        major_languages = ['eng', 'amh', 'ara', 'chi_sim', 'chi_tra', 'jpn', 'kor', 'rus', 'fra', 'spa', 'deu', 'ita', 'por', 'hin', 'ben', 'tur', 'heb', 'tha', 'vie']
+        # Major languages to try individually - Amharic first
+        major_languages = ['amh', 'ara', 'chi_sim', 'chi_tra', 'jpn', 'kor', 'rus', 'fra', 'spa', 'deu', 'ita', 'por', 'hin', 'ben', 'tur', 'heb', 'tha', 'vie', 'eng']  # English last
         
         for lang in major_languages:
             if lang not in self.available_languages:
