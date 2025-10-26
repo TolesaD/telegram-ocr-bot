@@ -115,7 +115,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show channel join requirement"""
     message_text = (
-        "👋 *Welcome to Enhanced OCR Bot!* 📸\n\n"
+        "👋 *Welcome to OUR Smart Bot!* 📸\n\n"
         "📢 *Join Our Channel First*\n\n"
         "To use this bot, you need to join our announcement channel:\n"
         f"👉 **{config.ANNOUNCEMENT_CHANNEL}**\n\n"
@@ -124,7 +124,6 @@ async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT
         "2. Join the channel\n"
         "3. Click 'I've Joined' to verify\n"
         "4. Start using the bot! 🎉\n\n"
-        "⚠️ *Note:* Membership is checked for every operation to ensure you stay in the channel."
     )
     
     try:
@@ -210,7 +209,6 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "• Focused, non-blurry text\n"
         "• High contrast\n"
         "• Horizontal text alignment\n\n"
-        "⚠️ *Note:* You need to stay in our channel to continue using the bot."
     )
     
     # Import reply keyboard from app
