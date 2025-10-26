@@ -206,7 +206,6 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "• Focused, non-blurry text\n"
         "• High contrast\n"
         "• Horizontal text alignment\n\n"
-        "⚠️ *Note:* You must stay in @ImageToTextConverter to continue using the bot."
     )
     
     # Import reply keyboard from app
