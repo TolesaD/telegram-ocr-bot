@@ -2,11 +2,10 @@ FROM python:3.9-slim
 
 # Install system dependencies including Tesseract with multiple language packs
 RUN apt-get update && apt-get install -y \
-    # Tesseract OCR and languages
     tesseract-ocr \
     tesseract-ocr-eng \
     tesseract-ocr-amh \
-    # Essential languages only to reduce size
+    # Essential European languages
     tesseract-ocr-ara \
     tesseract-ocr-fra \
     tesseract-ocr-spa \
@@ -14,22 +13,24 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-ita \
     tesseract-ocr-por \
     tesseract-ocr-rus \
+    # Essential Asian languages
     tesseract-ocr-chi-sim \
     tesseract-ocr-jpn \
     tesseract-ocr-kor \
     tesseract-ocr-hin \
-    # Tesseract development
+    # Additional important languages
+    tesseract-ocr-ukr \
+    tesseract-ocr-tur \
     libtesseract-dev \
     libleptonica-dev \
     pkg-config \
-    # OpenCV headless dependencies (updated for compatibility)
+    wget \
+    # OpenCV headless dependencies (compatible versions)
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
     libgl1 \
-    # Utilities
-    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Download only essential language packs
@@ -40,6 +41,8 @@ RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
     wget -q https://github.com/tesseract-ocr/tessdata/raw/main/ara.traineddata && \
     wget -q https://github.com/tesseract-ocr/tessdata/raw/main/fra.traineddata && \
     wget -q https://github.com/tesseract-ocr/tessdata/raw/main/spa.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/deu.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/rus.traineddata && \
     echo "✅ Essential language packs downloaded"
 
 # Set working directory

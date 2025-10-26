@@ -14,47 +14,45 @@ import re
 logger = logging.getLogger(__name__)
 
 class SmartOCRProcessor:
-    """Smart OCR processor with balanced accuracy and reliability"""
+    """Smart OCR processor with enhanced blurry/low-visibility text detection"""
     
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.setup_ocr_configs()
         
     def setup_ocr_configs(self):
-        """Optimized OCR configurations for reliability"""
+        """Optimized OCR configurations for various image qualities"""
         self.configs = {
-            # Standard configurations (more permissive)
+            # Standard configurations
             'english_standard': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
             'amharic_standard': '--oem 3 --psm 6 -c textord_min_linesize=1.8 -c preserve_interword_spaces=1',
             'auto': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
             'document': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
-            'single_line': '--oem 3 --psm 7 -c preserve_interword_spaces=1'
+            'single_line': '--oem 3 --psm 7 -c preserve_interword_spaces=1',
+            # Enhanced for blurry/low-quality images
+            'blurry_english': '--oem 3 --psm 6 -c textord_min_linesize=0.5 -c textord_old_baselines=1',
+            'blurry_amharic': '--oem 3 --psm 6 -c textord_min_linesize=0.8 -c textord_old_baselines=1',
+            'low_contrast': '--oem 3 --psm 6 -c tessedit_do_invert=1 -c textord_min_linesize=0.5'
         }
         
-        logger.info("✅ Smart OCR Processor initialized")
+        logger.info("✅ Smart OCR Processor initialized with enhanced blurry text detection")
     
     async def extract_text_smart(self, image_bytes: bytes) -> str:
-        """Reliable OCR extraction with balanced accuracy"""
+        """Enhanced OCR extraction optimized for blurry/low-visibility images"""
         start_time = time.time()
         
         try:
-            # Step 1: Fast preprocessing
-            processed_img = await asyncio.wait_for(
-                self._fast_preprocess(image_bytes),
+            # Enhanced preprocessing for blurry images
+            processed_img, image_quality = await asyncio.wait_for(
+                self._enhanced_preprocess(image_bytes),
                 timeout=5.0
             )
             
-            # Step 2: Quick language detection
-            probable_language = await asyncio.wait_for(
-                self._quick_language_detection(processed_img),
-                timeout=5.0
-            )
+            logger.info(f"🔍 Image quality: {image_quality['quality']} (blurry: {image_quality['is_blurry']}, low_contrast: {image_quality['is_low_contrast']})")
             
-            logger.info(f"🔍 Detected language: {probable_language}")
-            
-            # Step 3: Extract with reliable approach
+            # Extract with quality-optimized approach
             extracted_text = await asyncio.wait_for(
-                self._reliable_extraction(processed_img, probable_language),
+                self._quality_optimized_extraction(processed_img, image_quality),
                 timeout=15.0
             )
             
@@ -64,14 +62,14 @@ class SmartOCRProcessor:
                 logger.info(f"✅ OCR completed in {processing_time:.2f}s - {len(extracted_text)} chars")
                 return extracted_text
             else:
-                # Final fallback attempt
-                final_text = await self._final_fallback(processed_img)
+                # Enhanced fallback for difficult images
+                final_text = await self._enhanced_fallback(processed_img, image_quality)
                 if final_text and self._is_reasonable_text(final_text):
-                    logger.info(f"✅ Fallback OCR completed in {processing_time:.2f}s")
+                    logger.info(f"✅ Enhanced fallback completed in {processing_time:.2f}s")
                     return final_text
                 else:
-                    logger.warning("❌ No reasonable text extracted after all attempts")
-                    return "No readable text found. Please ensure the image contains clear, focused text."
+                    logger.warning("❌ No reasonable text extracted after enhanced attempts")
+                    return "No readable text found. The image might be too blurry, low contrast, or contain no visible text."
                 
         except asyncio.TimeoutError:
             logger.warning("OCR processing timeout")
@@ -80,8 +78,8 @@ class SmartOCRProcessor:
             logger.error(f"OCR processing error: {e}")
             return "Error processing image. Please try again with a different image."
     
-    async def _fast_preprocess(self, image_bytes: bytes) -> np.ndarray:
-        """Fast and reliable image preprocessing"""
+    async def _enhanced_preprocess(self, image_bytes: bytes) -> tuple:
+        """Enhanced preprocessing optimized for blurry and low-visibility images"""
         try:
             # Convert to numpy array
             nparr = np.frombuffer(image_bytes, np.uint8)
@@ -93,93 +91,166 @@ class SmartOCRProcessor:
             # Convert to grayscale
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             
-            # Simple resize if too large
-            height, width = gray.shape
-            if max(height, width) > 1200:
-                scale = 1200 / max(height, width)
-                new_width = int(width * scale)
-                new_height = int(height * scale)
-                gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+            # Analyze image quality
+            quality_info = self._analyze_image_quality(gray)
             
-            # Basic contrast enhancement
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
+            # Apply quality-specific preprocessing
+            if quality_info['is_blurry']:
+                processed = self._enhance_blurry_image(gray)
+            elif quality_info['is_low_contrast']:
+                processed = self._enhance_low_contrast_image(gray)
+            elif quality_info['is_dark']:
+                processed = self._enhance_dark_image(gray)
+            else:
+                processed = self._standard_enhancement(gray)
             
-            return enhanced
+            return processed, quality_info
             
         except Exception as e:
-            logger.error(f"Fast preprocessing failed: {e}")
-            # Simple fallback
+            logger.error(f"Enhanced preprocessing failed: {e}")
+            # Fallback to simple processing with default quality info
             image = Image.open(io.BytesIO(image_bytes)).convert('L')
-            return np.array(image)
+            img_array = np.array(image)
+            quality_info = self._analyze_image_quality(img_array)
+            return img_array, quality_info
     
-    async def _quick_language_detection(self, image: np.ndarray) -> str:
-        """Quick and reliable language detection"""
-        loop = asyncio.get_event_loop()
+    def _analyze_image_quality(self, image: np.ndarray) -> Dict:
+        """Comprehensive image quality analysis"""
+        # Blur detection using Laplacian variance
+        blur_value = cv2.Laplacian(image, cv2.CV_64F).var()
         
-        # Try quick English extraction
-        try:
-            english_text = await loop.run_in_executor(
-                self.executor,
-                pytesseract.image_to_string,
-                image, 'eng', self.configs['english_standard']
-            )
-            
-            if english_text and self._looks_like_english(english_text):
-                return 'english'
-        except:
-            pass
+        # Contrast and brightness analysis
+        contrast = image.std()
+        brightness = image.mean()
         
-        # Try quick Amharic extraction
-        try:
-            amharic_text = await loop.run_in_executor(
-                self.executor,
-                pytesseract.image_to_string,
-                image, 'amh', self.configs['amharic_standard']
-            )
-            
-            if amharic_text and self._looks_like_amharic(amharic_text):
-                return 'amharic'
-        except:
-            pass
+        # Additional quality metrics
+        min_val, max_val = image.min(), image.max()
+        dynamic_range = max_val - min_val
         
-        # Default to auto
-        return 'auto'
-    
-    async def _reliable_extraction(self, image: np.ndarray, language: str) -> str:
-        """Reliable text extraction with fallbacks"""
-        loop = asyncio.get_event_loop()
-        
-        strategies = {
-            'english': [
-                ('eng', self.configs['english_standard'], 'English Standard'),
-                ('eng', self.configs['document'], 'English Document'),
-            ],
-            'amharic': [
-                ('amh', self.configs['amharic_standard'], 'Amharic Standard'),
-                ('amh', self.configs['document'], 'Amharic Document'),
-            ],
-            'auto': [
-                ('eng', self.configs['auto'], 'Auto English'),
-                ('amh', self.configs['auto'], 'Auto Amharic'),
-                ('eng+amh', self.configs['auto'], 'Auto Combined'),
-            ]
+        return {
+            "blur": blur_value,
+            "contrast": contrast,
+            "brightness": brightness,
+            "dynamic_range": dynamic_range,
+            "is_blurry": blur_value < 30,  # Lower threshold for blur detection
+            "is_low_contrast": contrast < 25 or dynamic_range < 50,
+            "is_dark": brightness < 60,
+            "quality": "good" if blur_value > 50 and contrast > 40 else "poor"
         }
+    
+    def _enhance_blurry_image(self, image: np.ndarray) -> np.ndarray:
+        """Specialized enhancement for blurry images"""
+        try:
+            # Step 1: Strong noise reduction
+            denoised = cv2.medianBlur(image, 3)
+            
+            # Step 2: Aggressive sharpening for blurry text
+            kernel = np.array([[-1, -1, -1, -1, -1],
+                              [-1,  2,  2,  2, -1],
+                              [-1,  2,  8,  2, -1],
+                              [-1,  2,  2,  2, -1],
+                              [-1, -1, -1, -1, -1]]) / 8.0
+            sharpened = cv2.filter2D(denoised, -1, kernel)
+            
+            # Step 3: High contrast enhancement
+            clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+            high_contrast = clahe.apply(sharpened)
+            
+            # Step 4: Bilateral filter to preserve edges while reducing noise
+            bilateral = cv2.bilateralFilter(high_contrast, 9, 75, 75)
+            
+            return bilateral
+            
+        except Exception as e:
+            logger.error(f"Blurry enhancement failed: {e}")
+            return image
+    
+    def _enhance_low_contrast_image(self, image: np.ndarray) -> np.ndarray:
+        """Specialized enhancement for low-contrast images"""
+        try:
+            # Step 1: Histogram equalization for global contrast
+            equalized = cv2.equalizeHist(image)
+            
+            # Step 2: Adaptive histogram equalization for local contrast
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            adaptive = clahe.apply(equalized)
+            
+            # Step 3: Gamma correction for brightness adjustment
+            gamma = 1.5
+            inv_gamma = 1.0 / gamma
+            table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+            gamma_corrected = cv2.LUT(adaptive, table)
+            
+            return gamma_corrected
+            
+        except Exception as e:
+            logger.error(f"Low contrast enhancement failed: {e}")
+            return image
+    
+    def _enhance_dark_image(self, image: np.ndarray) -> np.ndarray:
+        """Specialized enhancement for dark images"""
+        try:
+            # Step 1: Brightness adjustment
+            brightened = cv2.convertScaleAbs(image, alpha=1.5, beta=50)
+            
+            # Step 2: Contrast enhancement
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            contrasted = clahe.apply(brightened)
+            
+            # Step 3: Reduce noise while preserving edges
+            denoised = cv2.fastNlMeansDenoising(contrasted, h=20)
+            
+            return denoised
+            
+        except Exception as e:
+            logger.error(f"Dark image enhancement failed: {e}")
+            return image
+    
+    def _standard_enhancement(self, image: np.ndarray) -> np.ndarray:
+        """Standard enhancement for good quality images"""
+        try:
+            # Basic denoising
+            denoised = cv2.fastNlMeansDenoising(image, h=10)
+            
+            # Moderate contrast enhancement
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(denoised)
+            
+            # Light sharpening
+            kernel = np.array([[-1, -1, -1],
+                              [-1,  9, -1],
+                              [-1, -1, -1]])
+            sharpened = cv2.filter2D(enhanced, -1, kernel)
+            
+            return sharpened
+            
+        except Exception as e:
+            logger.error(f"Standard enhancement failed: {e}")
+            return image
+    
+    async def _quality_optimized_extraction(self, image: np.ndarray, quality_info: Dict) -> str:
+        """Extraction optimized for image quality"""
+        loop = asyncio.get_event_loop()
         
-        strategies_list = strategies.get(language, strategies['auto'])
+        # Choose strategies based on image quality
+        if quality_info['is_blurry']:
+            strategies = self._get_blurry_strategies()
+        elif quality_info['is_low_contrast']:
+            strategies = self._get_low_contrast_strategies()
+        else:
+            strategies = self._get_standard_strategies()
         
-        for lang, config, strategy_name in strategies_list:
+        for lang, config, strategy_name in strategies:
             try:
                 text = await loop.run_in_executor(
                     self.executor,
                     pytesseract.image_to_string,
-                    image, lang, config
+                    image, lang, self.configs[config]
                 )
                 
-                if text and len(text.strip()) > 2:  # Lower threshold
+                if text and len(text.strip()) > 2:
                     logger.info(f"📊 {strategy_name}: {len(text.strip())} chars")
                     
-                    # Basic validation
                     if self._is_reasonable_text(text):
                         return text.strip()
                         
@@ -189,105 +260,125 @@ class SmartOCRProcessor:
         
         return ""
     
-    async def _final_fallback(self, image: np.ndarray) -> str:
-        """Final fallback attempts"""
+    def _get_blurry_strategies(self) -> List[Tuple]:
+        """Strategies for blurry images"""
+        return [
+            ('eng', 'blurry_english', 'Blurry English'),
+            ('amh', 'blurry_amharic', 'Blurry Amharic'),
+            ('eng+amh', 'blurry_english', 'Blurry Combined'),
+            ('eng', 'single_line', 'Blurry Single Line English'),
+            ('amh', 'single_line', 'Blurry Single Line Amharic'),
+        ]
+    
+    def _get_low_contrast_strategies(self) -> List[Tuple]:
+        """Strategies for low-contrast images"""
+        return [
+            ('eng', 'low_contrast', 'Low Contrast English'),
+            ('amh', 'low_contrast', 'Low Contrast Amharic'),
+            ('eng', 'blurry_english', 'Low Contrast Fallback English'),
+            ('amh', 'blurry_amharic', 'Low Contrast Fallback Amharic'),
+        ]
+    
+    def _get_standard_strategies(self) -> List[Tuple]:
+        """Standard strategies for good quality images"""
+        return [
+            ('eng', 'english_standard', 'English Standard'),
+            ('amh', 'amharic_standard', 'Amharic Standard'),
+            ('eng+amh', 'auto', 'Combined'),
+            ('eng', 'document', 'English Document'),
+            ('amh', 'document', 'Amharic Document'),
+        ]
+    
+    async def _enhanced_fallback(self, image: np.ndarray, quality_info: Dict) -> str:
+        """Enhanced fallback for difficult images"""
         loop = asyncio.get_event_loop()
         
-        fallback_attempts = [
-            ('eng', self.configs['single_line'], 'Fallback English'),
-            ('amh', self.configs['single_line'], 'Fallback Amharic'),
-            ('', self.configs['single_line'], 'Fallback Auto'),
+        # Try multiple preprocessing variations for difficult images
+        preprocessing_variations = [
+            self._apply_aggressive_enhancement,
+            self._apply_inversion,
+            self._apply_thresholding,
         ]
         
-        for lang, config, attempt_name in fallback_attempts:
+        for preprocess_func in preprocessing_variations:
             try:
+                enhanced_img = preprocess_func(image)
+                
+                # Try extraction on enhanced image
                 text = await loop.run_in_executor(
                     self.executor,
                     pytesseract.image_to_string,
-                    image, lang, config
+                    enhanced_img, 'eng+amh', self.configs['auto']
                 )
                 
-                if text and len(text.strip()) > 1:
-                    logger.info(f"🔄 {attempt_name} found text: {len(text.strip())} chars")
+                if text and len(text.strip()) > 2 and self._is_reasonable_text(text):
+                    logger.info(f"🔄 Enhanced fallback succeeded: {len(text.strip())} chars")
                     return text.strip()
                     
             except Exception as e:
-                logger.debug(f"Fallback {attempt_name} failed: {e}")
+                logger.debug(f"Enhanced fallback variation failed: {e}")
                 continue
         
         return ""
     
-    def _looks_like_english(self, text: str) -> bool:
-        """Check if text looks like English (permissive)"""
-        if not text or len(text.strip()) < 3:
-            return False
+    def _apply_aggressive_enhancement(self, image: np.ndarray) -> np.ndarray:
+        """Apply aggressive enhancement for very difficult images"""
+        # High-pass filter for edge enhancement
+        kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+        filtered = cv2.filter2D(image, -1, kernel)
         
-        # Count English characters
-        english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-        total_alpha = len([c for c in text if c.isalpha()])
+        # Extreme contrast enhancement
+        clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(4, 4))
+        contrasted = clahe.apply(filtered)
         
-        if total_alpha == 0:
-            return False
-        
-        # Lower threshold for English detection
-        return (english_chars / total_alpha) > 0.6
+        return contrasted
     
-    def _looks_like_amharic(self, text: str) -> bool:
-        """Check if text looks like Amharic (permissive)"""
-        if not text or len(text.strip()) < 3:
-            return False
-        
-        # Count Amharic characters
-        amharic_chars = sum(1 for c in text if '\u1200' <= c <= '\u137F')
-        total_alpha = len([c for c in text if c.isalpha()])
-        
-        if total_alpha == 0:
-            return False
-        
-        # Lower threshold for Amharic detection
-        return (amharic_chars / total_alpha) > 0.2
+    def _apply_inversion(self, image: np.ndarray) -> np.ndarray:
+        """Apply image inversion (white text on black background)"""
+        return cv2.bitwise_not(image)
+    
+    def _apply_thresholding(self, image: np.ndarray) -> np.ndarray:
+        """Apply adaptive thresholding"""
+        return cv2.adaptiveThreshold(
+            image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY, 11, 2
+        )
     
     def _is_reasonable_text(self, text: str) -> bool:
-        """Check if text is reasonable (permissive validation)"""
-        if not text or len(text.strip()) < 3:
+        """Check if text is reasonable (more permissive for difficult images)"""
+        if not text or len(text.strip()) < 2:  # Lower threshold
             return False
         
-        # Remove whitespace and check minimum length
         clean_text = text.strip()
-        if len(clean_text) < 3:
+        
+        # More permissive validation for difficult images
+        if len(clean_text) < 2:
             return False
         
-        # Check for reasonable character diversity
+        # Check character diversity (more permissive)
         unique_chars = len(set(clean_text))
-        if unique_chars < 2:
+        if unique_chars < 1:
             return False
         
-        # Check if it's not just repeated characters
-        if len(clean_text) > 5:
-            repeated_ratio = max(clean_text.count(c) for c in clean_text) / len(clean_text)
-            if repeated_ratio > 0.8:  # 80% same character
-                return False
-        
-        # Basic garbage detection
+        # Less strict garbage detection for difficult images
         if self._is_obvious_garbage(text):
             return False
         
         return True
     
     def _is_obvious_garbage(self, text: str) -> bool:
-        """Detect obvious garbage text"""
+        """Detect obvious garbage text (more permissive)"""
         if not text:
             return True
         
-        # Too many special characters
+        # More permissive special character ratio for difficult images
         special_chars = sum(1 for c in text if not c.isalnum() and not c.isspace())
-        if special_chars / len(text) > 0.5:
+        if special_chars / len(text) > 0.7:  # Higher threshold
             return True
         
         # Repeated nonsense patterns
         nonsense_patterns = [
-            r'^[^a-zA-Z\u1200-\u137F]*$',  # No letters at all
-            r'(.)\1{5,}',  # Same character repeated 6+ times
+            r'(.)\1{8,}',  # Same character repeated 9+ times
         ]
         
         for pattern in nonsense_patterns:

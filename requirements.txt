@@ -1,11 +1,8 @@
 python-telegram-bot==20.7
 pytesseract==0.3.10
 pillow==10.1.0
-pymongo==4.5.0
 python-dotenv==1.0.0
 psycopg2-binary==2.9.7
-opencv-python==4.8.1.78
-numpy==1.24.3
-easyocr>=1.7.0
 opencv-python-headless==4.8.1.78
+numpy==1.24.3
 langdetect==1.0.9
