@@ -64,7 +64,7 @@ except ImportError as e:
         logger.error("All OCR imports failed")
         OCR_AVAILABLE = False
 
-# IMPORTANT: Add TextFormatter import
+# IMPORTANT: Enhanced TextFormatter
 try:
     from utils.text_formatter import TextFormatter
     TEXT_FORMATTER_AVAILABLE = True
@@ -72,16 +72,25 @@ try:
 except ImportError as e:
     logger.error(f"Text formatter import failed: {e}")
     TEXT_FORMATTER_AVAILABLE = False
-    # Create a simple fallback
-    class SimpleTextFormatter:
+    # Create enhanced fallback
+    class EnhancedTextFormatter:
         @staticmethod
         def format_text(text, format_type='plain'):
-            if format_type == 'html':
-                return f"<pre>{text}</pre>"
-            else:
+            """Enhanced text formatting with proper HTML support"""
+            if not text:
                 return text
-    TextFormatter = SimpleTextFormatter
-    logger.info("✅ Using simple text formatter fallback")
+                
+            if format_type == 'html':
+                # Proper HTML formatting with preserved spacing
+                formatted = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                # Preserve multiple spaces and newlines
+                formatted = formatted.replace('  ', ' &nbsp;').replace('\n', '<br>')
+                return f"<pre>{formatted}</pre>"
+            else:
+                # Plain text - return as is
+                return text
+    TextFormatter = EnhancedTextFormatter
+    logger.info("✅ Using enhanced text formatter fallback")
 
 # Import database - POSTGRESQL ONLY VERSION
 try:
@@ -166,7 +175,7 @@ def get_channel_keyboard():
     from handlers.start import get_channel_keyboard as start_channel_keyboard
     return start_channel_keyboard()
 
-# ===== HANDLER FUNCTIONS =====
+# ===== ENHANCED HANDLER FUNCTIONS =====
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command - imported from handlers.start"""
@@ -218,7 +227,7 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Current format: **{current_format.upper()}**\n\n"
         f"Choose your preferred text format:",
         parse_mode='Markdown',
-        reply_markup=get_settings_keyboard()
+        reply_mup=get_settings_keyboard()
     )
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -358,10 +367,20 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle image messages with robust error handling and OCR integration"""
+    """ENHANCED image handler with improved OCR and formatting"""
     message = update.message
     
     try:
+        # Apply channel membership check for ALL image handlers
+        from handlers.start import check_channel_membership
+        user_id = update.effective_user.id
+        has_joined = await check_channel_membership(update, context, user_id)
+        
+        if not has_joined:
+            from handlers.start import show_channel_requirement
+            await show_channel_requirement(update, context)
+            return
+
         if not message.photo:
             await message.reply_text("Please send an image containing text.")
             return
@@ -375,7 +394,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo_file = await photo.get_file()
             photo_bytes = await asyncio.wait_for(
                 photo_file.download_as_bytearray(),
-                timeout=15.0  # Increased timeout
+                timeout=15.0
             )
             logger.info(f"✅ Downloaded image: {len(photo_bytes)} bytes")
         except asyncio.TimeoutError:
@@ -386,7 +405,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text("❌ Failed to download image. Please try again.")
             return
         
-        # Process with OCR - UPDATED LOGIC
+        # Process with ENHANCED OCR
         await processing_msg.edit_text("🔍 Analyzing image content...")
         
         if not OCR_AVAILABLE:
@@ -394,10 +413,10 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         try:
-            # Use the smart OCR processor with timeout
+            # Use the enhanced smart OCR processor
             extracted_text = await asyncio.wait_for(
                 smart_ocr_processor.extract_text_smart(bytes(photo_bytes)),
-                timeout=30.0  # 30 second timeout for OCR processing
+                timeout=45.0  # Increased timeout for enhanced processing
             )
             
             logger.info(f"📝 OCR completed, extracted {len(extracted_text) if extracted_text else 0} characters")
@@ -410,39 +429,26 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text("❌ Error during text extraction. Please try again with a different image.")
             return
         
-        # Handle OCR result - IMPROVED LOGIC
-        if not extracted_text:
+        # Handle OCR result - IMPROVED VALIDATION
+        if not extracted_text or extracted_text.startswith("No readable text") or extracted_text.startswith("Processing took") or extracted_text.startswith("Error processing"):
             await processing_msg.edit_text("❌ No text could be extracted from the image. Please ensure the image contains clear, readable text.")
             return
         
-        # Check for error messages from OCR
-        error_indicators = [
-            'No readable text found',
-            'Processing took too long', 
-            'Error processing image',
-            'No readable text',
-            'readable text found'
-        ]
-        
-        if any(indicator in extracted_text for indicator in error_indicators):
-            await processing_msg.edit_text(f"❌ {extracted_text}")
-            return
-        
-        # Check if text is meaningful (not garbage)
-        if len(extracted_text.strip()) < 10:
+        # Enhanced text validation
+        clean_text = extracted_text.strip()
+        if len(clean_text) < 5:
             await processing_msg.edit_text("❌ Extracted text is too short or unclear. Please try with a clearer image containing more text.")
             return
         
-        # Check for garbage text (too many special characters)
-        clean_text = extracted_text.strip()
-        alpha_chars = sum(1 for c in clean_text if c.isalpha())
-        total_chars = len(clean_text)
+        # Check for meaningful text (reduced threshold for short texts)
+        if len(clean_text) > 10:
+            alpha_chars = sum(1 for c in clean_text if c.isalpha())
+            total_chars = len(clean_text)
+            if total_chars > 0 and (alpha_chars / total_chars) < 0.2:  # Reduced to 20% for global languages
+                await processing_msg.edit_text("❌ Unable to extract meaningful text. The image may be too blurry or contain mostly non-text elements.")
+                return
         
-        if total_chars > 0 and (alpha_chars / total_chars) < 0.3:  # Less than 30% alphabetic characters
-            await processing_msg.edit_text("❌ Unable to extract meaningful text. The image may be too blurry or contain mostly non-text elements.")
-            return
-        
-        # Format and send result
+        # Format and send result - SIMPLIFIED OUTPUT
         user_id = update.effective_user.id
         try:
             user = db.get_user(user_id)
@@ -450,34 +456,26 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             text_format = 'plain'
         
-        # Format the text
+        # Format the text using enhanced formatter
         formatted_text = TextFormatter.format_text(extracted_text, text_format)
         
-        # Add language info if available
-        language_info = ""
-        if LANGUAGE_SUPPORT_AVAILABLE:
-            try:
-                detected_lang = detect_primary_language(extracted_text)
-                lang_name = get_language_name(detected_lang)
-                language_info = f" (Detected: {lang_name})"
-            except Exception as e:
-                logger.error(f"Language detection error: {e}")
+        # REMOVED: "✅Text Extracted: (Detected:...)" - Now just send the text directly
         
         # Truncate if too long for Telegram
         if len(formatted_text) > 4000:
             formatted_text = formatted_text[:3900] + "\n\n... [text truncated due to length]"
         
-        # Send result
+        # Send result - CLEAN OUTPUT
         try:
             if text_format == 'html':
                 await processing_msg.edit_text(
-                    f"✅ **Text Extracted**{language_info}\n\n{formatted_text}",
+                    formatted_text,
                     parse_mode='HTML'
                 )
             else:
                 await processing_msg.edit_text(
-                    f"✅ **Text Extracted**{language_info}\n\n{formatted_text}",
-                    parse_mode='Markdown'
+                    formatted_text,
+                    parse_mode=None  # Plain text, no formatting
                 )
             
             # Log success
@@ -495,9 +493,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Message sending error: {e}")
             # Fallback: send as plain text
-            await processing_msg.edit_text(
-                f"✅ **Text Extracted**{language_info}\n\n{extracted_text[:3000]}"
-            )
+            await processing_msg.edit_text(extracted_text[:3000])
             
     except asyncio.TimeoutError:
         logger.error("Overall image processing timeout")
