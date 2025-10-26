@@ -1,4 +1,4 @@
-# app.py - COMPLETE VERSION WITH ALL HANDLERS
+# app.py - COMPLETE FIXED VERSION
 import os
 import logging
 import asyncio
@@ -151,15 +151,20 @@ def get_back_keyboard():
     keyboard = [[InlineKeyboardButton("🔙 Back to Main", callback_data="main_menu")]]
     return InlineKeyboardMarkup(keyboard)
 
-# ===== HANDLER IMPORTS =====
-try:
-    from handlers.start import start_command, require_channel_membership, check_channel_membership, show_channel_requirement
-    from handlers.help import help_command
-    logger.info("✅ Handler imports successful")
-except ImportError as e:
-    logger.error(f"Handler imports failed: {e}")
-
 # ===== COMMAND HANDLERS =====
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start command"""
+    try:
+        from handlers.start import start_command as start_handler
+        await start_handler(update, context)
+    except ImportError as e:
+        logger.error(f"Start handler import failed: {e}")
+        await update.message.reply_text(
+            "👋 Welcome! Send me an image to extract text.",
+            parse_mode='Markdown',
+            reply_markup=get_reply_keyboard()
+        )
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command"""
     await update.message.reply_text(
@@ -215,7 +220,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• ✅ Success rate: **{success_rate:.1f}%**\n"
             f"• 🕒 Recent activity: **{recent_count}** requests\n"
             f"• 🌍 Languages: **70+ supported**\n\n"
-            f"Keep converting images to build your stats!",
+            f"Keep converting images to build your stats! 📸",
             parse_mode='Markdown',
             reply_markup=get_reply_keyboard()
         )
@@ -291,7 +296,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"• ✅ Success rate: **{success_rate:.1f}%**\n"
                 f"• 🕒 Recent activity: **{recent_count}** requests\n"
                 f"• 🌍 Languages: **70+ supported**\n\n"
-                f"Keep converting images to build your stats!",
+                f"Keep converting images to build your stats! 📸",
                 parse_mode='Markdown',
                 reply_markup=get_reply_keyboard()
             )
@@ -318,50 +323,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode='Markdown',
             reply_markup=get_reply_keyboard()
         )
-
-# ===== CALLBACK HANDLER =====
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle all inline button callbacks"""
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data
-    logger.info(f"Callback received: {data}")
-    
-    # Handle channel membership check first
-    if data == "check_membership":
-        try:
-            from handlers.start import handle_membership_check
-            await handle_membership_check(update, context)
-            return
-        except ImportError as e:
-            logger.error(f"Membership handler import failed: {e}")
-            await query.answer("✅ Welcome! You're all set.")
-            await show_main_menu(query)
-        return
-    
-    # Handle other callbacks
-    if data == "main_menu":
-        await show_main_menu(query)
-    
-    elif data == "convert_image":
-        await show_convert_menu(query)
-    
-    elif data == "settings":
-        await show_settings_menu(query)
-    
-    elif data == "statistics":
-        await show_statistics_menu(query)
-    
-    elif data == "help":
-        await show_help_menu(query)
-    
-    elif data.startswith("set_format_"):
-        await handle_format_change(query, data)
-    
-    else:
-        await query.edit_message_text("❌ Unknown command. Returning to main menu.")
-        await show_main_menu(query)
 
 # ===== MENU FUNCTIONS FOR CALLBACKS =====
 async def show_main_menu(query):
@@ -429,7 +390,7 @@ async def show_statistics_menu(query):
             f"• ✅ Success rate: **{success_rate:.1f}%**\n"
             f"• 🕒 Recent activity: **{recent_count}** requests\n"
             f"• 🌍 Languages: **70+ supported**\n\n"
-            f"Keep converting images to build your stats!",
+            f"Keep converting images to build your stats! 📸",
             parse_mode='Markdown',
             reply_markup=get_back_keyboard()
         )
@@ -497,8 +458,51 @@ async def handle_format_change(query, data):
             reply_markup=get_back_keyboard()
         )
 
+# ===== CALLBACK HANDLER =====
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle all inline button callbacks - FIXED"""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    logger.info(f"Callback received: {data}")
+    
+    # Handle channel membership check first
+    if data == "check_membership":
+        try:
+            from handlers.start import handle_membership_check
+            await handle_membership_check(update, context)
+            return
+        except ImportError as e:
+            logger.error(f"Membership handler import failed: {e}")
+            await query.answer("✅ Welcome! You're all set.", show_alert=True)
+            await show_main_menu(query)
+        return
+    
+    # Handle other callbacks
+    if data == "main_menu":
+        await show_main_menu(query)
+    
+    elif data == "convert_image":
+        await show_convert_menu(query)
+    
+    elif data == "settings":
+        await show_settings_menu(query)
+    
+    elif data == "statistics":
+        await show_statistics_menu(query)
+    
+    elif data == "help":
+        await show_help_menu(query)
+    
+    elif data.startswith("set_format_"):
+        await handle_format_change(query, data)
+    
+    else:
+        await query.edit_message_text("❌ Unknown command. Returning to main menu.")
+        await show_main_menu(query)
+
 # ===== ULTIMATE IMAGE HANDLER =====
-@require_channel_membership
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ULTIMATE image handler with smart OCR selection"""
     message = update.message
@@ -653,8 +657,16 @@ async def post_init(application):
     logger.info("🚀 ULTIMATE OCR Bot is ready!")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Error handler"""
-    logger.error(f"Error: {context.error}")
+    """Enhanced error handler"""
+    logger.error(f"🔴 ERROR: {context.error}")
+    logger.error(f"🔴 Error type: {type(context.error)}")
+    
+    # Get the full traceback
+    import traceback
+    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
+    tb_string = ''.join(tb_list)
+    logger.error(f"🔴 Full traceback:\n{tb_string}")
+    
     try:
         if update and update.effective_chat:
             await context.bot.send_message(
@@ -672,7 +684,8 @@ def main():
             logger.error("BOT_TOKEN not found")
             return
 
-        # Create application
+        logger.info("✅ Starting bot...")
+        
         application = (
             Application.builder()
             .token(BOT_TOKEN)
@@ -683,7 +696,7 @@ def main():
         # Store database
         application.bot_data['db'] = db
         
-        # Add handlers
+        # Add handlers - FUNCTION REFERENCES only, no calling
         handlers = [
             CommandHandler("start", start_command),
             CommandHandler("help", help_command),
@@ -711,6 +724,8 @@ def main():
         
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main()
