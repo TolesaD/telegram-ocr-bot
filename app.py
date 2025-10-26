@@ -40,6 +40,7 @@ for key, fallback_value in FALLBACK_VALUES.items():
         logger.warning(f"Using fallback for {key}")
 
 # Import language support if available
+# Import language support if available
 try:
     from ocr_engine.language_support import detect_primary_language, get_language_name
     LANGUAGE_SUPPORT_AVAILABLE = True
@@ -47,6 +48,41 @@ try:
 except ImportError as e:
     LANGUAGE_SUPPORT_AVAILABLE = False
     logger.warning(f"❌ Language support module not available: {e}")
+
+# Import OCR components
+try:
+    from utils.smart_ocr import smart_ocr_processor
+    OCR_AVAILABLE = True
+    logger.info("✅ Smart OCR components imported successfully")
+except ImportError as e:
+    logger.error(f"Smart OCR import failed: {e}")
+    OCR_AVAILABLE = False
+    # Fallback to basic OCR
+    try:
+        from utils.image_processing import ocr_processor
+        logger.info("✅ Using basic OCR as fallback")
+    except ImportError:
+        logger.error("All OCR imports failed")
+        OCR_AVAILABLE = False
+
+# IMPORTANT: Add TextFormatter import
+try:
+    from utils.text_formatter import TextFormatter
+    TEXT_FORMATTER_AVAILABLE = True
+    logger.info("✅ Text formatter imported successfully")
+except ImportError as e:
+    logger.error(f"Text formatter import failed: {e}")
+    TEXT_FORMATTER_AVAILABLE = False
+    # Create a simple fallback
+    class SimpleTextFormatter:
+        @staticmethod
+        def format_text(text, format_type='plain'):
+            if format_type == 'html':
+                return f"<pre>{text}</pre>"
+            else:
+                return text
+    TextFormatter = SimpleTextFormatter
+    logger.info("✅ Using simple text formatter fallback")
 
 # Import database - POSTGRESQL ONLY VERSION
 try:
@@ -94,12 +130,19 @@ except Exception as e:
 
 # Import OCR
 try:
-    from utils.image_processing import ocr_processor, performance_monitor
-    from utils.text_formatter import TextFormatter
-    logger.info("✅ OCR components imported")
+    from utils.smart_ocr import smart_ocr_processor
+    OCR_AVAILABLE = True
+    logger.info("✅ Smart OCR components imported successfully")
 except ImportError as e:
-    logger.error(f"OCR import failed: {e}")
-    raise
+    logger.error(f"Smart OCR import failed: {e}")
+    OCR_AVAILABLE = False
+    # Fallback to basic OCR
+    try:
+        from utils.image_processing import ocr_processor
+        logger.info("✅ Using basic OCR as fallback")
+    except ImportError:
+        logger.error("All OCR imports failed")
+        OCR_AVAILABLE = False
 
 # ===== KEYBOARD LAYOUTS =====
 
@@ -332,30 +375,45 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle image messages"""
+    """Handle image messages with robust error handling"""
+    message = update.message
+    
     try:
-        message = update.message
         if not message.photo:
             await message.reply_text("Please send an image containing text.")
             return
 
+        # Send initial message
         processing_msg = await message.reply_text("🔄 Processing your image...")
         
-        # Download image
-        photo = message.photo[-1]
-        photo_file = await photo.get_file()
-        photo_bytes = await photo_file.download_as_bytearray()
-        
-        # Extract text
-        extracted_text = await ocr_processor.extract_text_optimized(bytes(photo_bytes))
-        
-        if not extracted_text or "No readable text" in extracted_text:
-            await processing_msg.edit_text(
-                "❌ No readable text found.\n\nTry with a clearer image with better lighting."
+        # Download image with timeout
+        try:
+            photo = message.photo[-1]
+            photo_file = await photo.get_file()
+            photo_bytes = await asyncio.wait_for(
+                photo_file.download_as_bytearray(),
+                timeout=10.0
             )
+            logger.info(f"✅ Downloaded image: {len(photo_bytes)} bytes")
+        except asyncio.TimeoutError:
+            await processing_msg.edit_text("❌ Image download timed out. Please try again.")
+            return
+        except Exception as e:
+            logger.error(f"Download error: {e}")
+            await processing_msg.edit_text("❌ Failed to download image. Please try again.")
             return
         
-        # Get user format preference
+        # Process with OCR
+        await processing_msg.edit_text("🔍 Analyzing image content...")
+        
+        extracted_text = await smart_ocr_processor.extract_text_smart(bytes(photo_bytes))
+        
+        # Handle OCR result
+        if not extracted_text or extracted_text.startswith(('No readable', 'Processing took', 'Error processing')):
+            await processing_msg.edit_text(f"❌ {extracted_text}")
+            return
+        
+        # Format and send result
         user_id = update.effective_user.id
         try:
             user = db.get_user(user_id)
@@ -363,30 +421,31 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             text_format = 'plain'
         
-        # Format text
         formatted_text = TextFormatter.format_text(extracted_text, text_format)
         
-        # LANGUAGE DETECTION - ADDED HERE
+        # Add language info if available
+        language_info = ""
         if LANGUAGE_SUPPORT_AVAILABLE:
-            detected_lang = detect_primary_language(extracted_text)
-            lang_name = get_language_name(detected_lang)
-            language_info = f" (Detected: {lang_name})"
-        else:
-            language_info = ""
+            try:
+                detected_lang = detect_primary_language(extracted_text)
+                lang_name = get_language_name(detected_lang)
+                language_info = f" (Detected: {lang_name})"
+            except:
+                pass
         
-        # Send result with language info
+        # Send result
         if text_format == 'html':
             await processing_msg.edit_text(
-                f"✅ **Text Extracted**{language_info} (HTML Format)\n\n{formatted_text}",
+                f"✅ Text Extracted{language_info}\n\n{formatted_text}",
                 parse_mode='HTML'
             )
         else:
             await processing_msg.edit_text(
-                f"✅ **Text Extracted**{language_info}\n\n{formatted_text}",
+                f"✅ Text Extracted{language_info}\n\n{formatted_text}",
                 parse_mode='Markdown'
             )
         
-        # Log request
+        # Log success
         try:
             db.log_ocr_request({
                 'user_id': user_id,
@@ -396,12 +455,18 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'status': 'success'
             })
         except Exception as e:
-            logger.error(f"Error logging request: {e}")
+            logger.error(f"Logging error: {e}")
             
-    except Exception as e:
-        logger.error(f"Image processing error: {e}")
+    except asyncio.TimeoutError:
+        logger.error("Overall image processing timeout")
         try:
-            await update.message.reply_text("❌ Error processing image. Please try again with a different image.")
+            await message.reply_text("❌ Processing timed out. Please try with a smaller image.")
+        except:
+            pass
+    except Exception as e:
+        logger.error(f"Unexpected error in handle_image: {e}")
+        try:
+            await message.reply_text("❌ An unexpected error occurred. Please try again.")
         except:
             pass
 

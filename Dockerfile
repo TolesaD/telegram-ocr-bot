@@ -61,6 +61,12 @@ RUN apt-get update && apt-get install -y \
     libleptonica-dev \
     pkg-config \
     wget \
+    # OpenCV dependencies (headless)
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
 # Download only verified additional language packs
@@ -97,7 +103,9 @@ COPY . .
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
-
+ENV OMP_THREAD_LIMIT=1
+ENV OMP_NUM_THREADS=1
+ENV TESSERACT_OCR_TIMEOUT=30
 # Create non-root user for security
 RUN useradd -m -u 1000 railway
 USER railway
