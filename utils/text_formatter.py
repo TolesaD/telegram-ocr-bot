@@ -9,12 +9,33 @@ class TextFormatter:
     """
     
     @staticmethod
+    def format_text(text: str, format_type: str = 'plain') -> str:
+        """
+        Main formatting function - UPDATED to match app.py usage
+        
+        Args:
+            text: Extracted text to format
+            format_type: 'plain' or 'html'
+        """
+        if not text:
+            return ""
+            
+        format_type = format_type.lower()
+        
+        try:
+            if format_type == 'html':
+                return TextFormatter.format_html(text)
+            else:  # plain
+                return TextFormatter.format_plain(text)
+                
+        except Exception as e:
+            print(f"Formatting error: {e}")
+            return text
+    
+    @staticmethod
     def format_plain(text: str) -> str:
         """
         Clean plain text formatting
-        - Preserves paragraph structure
-        - Maintains readable formatting
-        - Fixes common OCR issues
         """
         if not text:
             return ""
@@ -36,20 +57,17 @@ class TextFormatter:
     @staticmethod
     def _clean_paragraph(paragraph: str) -> str:
         """Clean a single paragraph while preserving meaning"""
-        # Split into lines and clean
         lines = paragraph.split('\n')
         cleaned_lines = []
         
         for line in lines:
             line = line.strip()
             if line:
-                # Fix common OCR errors
                 line = re.sub(r'\s+', ' ', line)  # Normalize spaces
-                line = TextFormatter._fix_bullets(line)  # Fix bullet points
-                line = TextFormatter._fix_common_errors(line)  # Fix common OCR errors
+                line = TextFormatter._fix_bullets(line)
+                line = TextFormatter._fix_common_errors(line)
                 cleaned_lines.append(line)
         
-        # Join lines to form a coherent paragraph
         return ' '.join(cleaned_lines)
     
     @staticmethod
@@ -92,8 +110,6 @@ class TextFormatter:
     def format_html(text: str) -> str:
         """
         HTML formatting for easy copying
-        - Preserves all formatting
-        - Easy to copy and paste
         """
         if not text:
             return ""
