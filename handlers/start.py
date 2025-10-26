@@ -1,4 +1,4 @@
-# handlers/start.py - FIXED VERSION
+# handlers/start.py (UPDATED VERSION)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 from datetime import datetime, timedelta
@@ -28,18 +28,22 @@ def get_channel_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    """ALWAYS check if user is a member of the announcement channel - REDUCED CACHE TIME"""
-    # Check cache first (reduced from 1 hour to 5 minutes)
-    if user_id in user_verification_cache:
+async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, force_check: bool = False):
+    """Check if user is a member of the announcement channel with shorter cache"""
+    # Skip verification for admins
+    if user_id in config.ADMIN_IDS:
+        return True
+    
+    # Check cache first (only 5 minutes for persistent checking)
+    if not force_check and user_id in user_verification_cache:
         cached_status = user_verification_cache[user_id]
-        # Cache expires after 5 minutes instead of 1 hour
+        # Cache expires after 5 minutes for persistent checking
         if (datetime.now() - cached_status['timestamp']).total_seconds() < 300:
             logger.info(f"🎯 Using cached membership status for user {user_id}: {cached_status['status']}")
             return cached_status['status']
     
     try:
-        logger.info(f"🔍 REAL-TIME Checking membership for user {user_id}")
+        logger.info(f"🔍 Checking membership for user {user_id}")
         
         chat_member = await context.bot.get_chat_member(
             chat_id=config.ANNOUNCEMENT_CHANNEL,
@@ -48,9 +52,9 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
         
         logger.info(f"📊 User {user_id} status: {chat_member.status}")
         
-        is_member = chat_member.status not in ['left', 'kicked', 'banned']
+        is_member = chat_member.status in ['member', 'administrator', 'creator']
         
-        # Update cache with shorter time
+        # Update cache with shorter duration
         user_verification_cache[user_id] = {
             'status': is_member,
             'timestamp': datetime.now()
@@ -65,11 +69,11 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
         
     except Exception as e:
         logger.error(f"🚨 Error checking membership for user {user_id}: {e}")
-        # If bot can't access channel, don't allow user to proceed
-        return False  # Changed from True to False for security
+        # If bot can't access channel, don't cache and return False to require verification
+        return False
 
 async def require_channel_membership(handler):
-    """Decorator to require channel membership for any handler - ENHANCED"""
+    """Decorator to require channel membership for any handler - ALWAYS CHECK"""
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         
@@ -77,8 +81,8 @@ async def require_channel_membership(handler):
         if user.id in config.ADMIN_IDS:
             return await handler(update, context)
         
-        # ALWAYS check membership (no cache bypass)
-        has_joined = await check_channel_membership(update, context, user.id)
+        # ALWAYS check membership (no cache for handlers)
+        has_joined = await check_channel_membership(update, context, user.id, force_check=True)
         
         if not has_joined:
             logger.info(f"🚫 Blocking user {user.id} - not in channel")
@@ -96,8 +100,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"🚀 /start from user {user.id} (@{user.username})")
     
-    # Check channel membership first
-    has_joined = await check_channel_membership(update, context, user.id)
+    # Check channel membership first (force check)
+    has_joined = await check_channel_membership(update, context, user.id, force_check=True)
     
     if not has_joined:
         logger.info(f"❌ User {user.id} not in channel")
@@ -111,16 +115,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show channel join requirement"""
     message_text = (
-        "👋 *Welcome to Smart Bot!* 📸\n\n"
+        "👋 *Welcome to Enhanced OCR Bot!* 📸\n\n"
         "📢 *Join Our Channel First*\n\n"
-        "To use this bot, you must be a member of our channel:\n"
-        f"**@{config.CHANNEL_USERNAME}**\n\n"
+        "To use this bot, you need to join our announcement channel:\n"
+        f"👉 **{config.ANNOUNCEMENT_CHANNEL}**\n\n"
         "*Steps:*\n"
-        "1. Click 'Join Announcement Channel'\n"
+        "1. Click 'Join Announcement Channel' below\n"
         "2. Join the channel\n"
-        "3. Click 'I've Joined'\n"
-        "4. Start converting images! 🎉\n\n"
-        "💡 *Note:* You must stay in the channel to continue using the bot."
+        "3. Click 'I've Joined' to verify\n"
+        "4. Start using the bot! 🎉\n\n"
+        "⚠️ *Note:* Membership is checked for every operation to ensure you stay in the channel."
     )
     
     try:
@@ -151,11 +155,11 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"🔄 User {user.id} checking membership...")
     
-    # ALWAYS clear cache to force fresh check
+    # Force fresh check by clearing cache
     if user.id in user_verification_cache:
         del user_verification_cache[user.id]
     
-    has_joined = await check_channel_membership(update, context, user.id)
+    has_joined = await check_channel_membership(update, context, user.id, force_check=True)
     
     if has_joined:
         logger.info(f"🎉 User {user.id} verified successfully")
@@ -164,7 +168,7 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     else:
         logger.warning(f"❌ User {user.id} not verified")
         await query.answer(
-            "❌ Please join the channel first, then click 'I've Joined'. Make sure you're still in the channel!",
+            "❌ Please join the channel first and wait a moment before clicking 'I've Joined'.",
             show_alert=True
         )
 
@@ -194,10 +198,10 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         f"🎉 *Welcome {user.first_name}!* 🌍\n\n"
         "🤖 *Smart Bot with 70+ Language Support*\n\n"
         "✨ *Features:*\n"
-        "• 🚀 Advanced text extraction\n"
-        "• 🌍 **70+ languages supported**\n"
-        "• 💬 **Plain Text & HTML formats**\n"
-        "• 🔤 Auto language detection\n\n"
+        "🚀 Advanced text extraction\n"
+        "🌍 **70+ languages supported**\n"
+        "💬 **Plain Text & HTML formats**\n"
+        "🔤 Auto language detection\n\n"
         "📸 *How to use:*\n"
         "1. Send me any image with text\n"
         "2. I'll extract and format the text automatically\n\n"
@@ -206,6 +210,7 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "• Focused, non-blurry text\n"
         "• High contrast\n"
         "• Horizontal text alignment\n\n"
+        "⚠️ *Note:* You need to stay in our channel to continue using the bot."
     )
     
     # Import reply keyboard from app
@@ -245,11 +250,11 @@ async def force_check_membership(update: Update, context: ContextTypes.DEFAULT_T
     user = update.effective_user
     logger.info(f"🔧 Force membership check for user {user.id}")
     
-    # Clear cache
+    # Clear cache and force check
     if user.id in user_verification_cache:
         del user_verification_cache[user.id]
     
-    has_joined = await check_channel_membership(update, context, user.id)
+    has_joined = await check_channel_membership(update, context, user.id, force_check=True)
     
     if has_joined:
         await update.effective_message.reply_text(

@@ -227,7 +227,7 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Current format: **{current_format.upper()}**\n\n"
         f"Choose your preferred text format:",
         parse_mode='Markdown',
-        reply_mup=get_settings_keyboard()
+        reply_markup=get_settings_keyboard()
     )
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
