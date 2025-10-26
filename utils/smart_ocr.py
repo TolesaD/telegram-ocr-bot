@@ -14,7 +14,7 @@ import re
 logger = logging.getLogger(__name__)
 
 class SmartOCRProcessor:
-    """Smart OCR processor with 70+ language support"""
+    """Universal OCR processor that handles all languages intelligently"""
     
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=2)
@@ -25,104 +25,71 @@ class SmartOCRProcessor:
         """Get available languages from system"""
         try:
             langs = pytesseract.get_languages()
-            logger.info(f"🌍 Available languages: {len(langs)} languages detected")
-            if langs:
-                logger.info(f"📋 Sample languages: {', '.join(langs[:10])}{'...' if len(langs) > 10 else ''}")
+            logger.info(f"🌍 Available languages: {len(langs)} languages")
             return langs
         except Exception as e:
             logger.error(f"Language detection failed: {e}")
             return ['eng', 'amh']  # Fallback to basic languages
     
     def setup_ocr_configs(self):
-        """Optimized OCR configurations for 70+ languages"""
+        """Optimized OCR configurations for universal language support"""
         self.configs = {
-            # Standard configurations
-            'english_standard': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
-            'amharic_standard': '--oem 3 --psm 6 -c textord_min_linesize=1.8 -c preserve_interword_spaces=1',
-            'auto': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
+            'standard': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
             'document': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
             'single_line': '--oem 3 --psm 7 -c preserve_interword_spaces=1',
-            'multi_language': '--oem 3 --psm 6 -c preserve_interword_spaces=1'
+            'sparse_text': '--oem 3 --psm 6 -c textord_min_linesize=0.5',
+            'blurry': '--oem 3 --psm 6 -c textord_old_baselines=1'
         }
         
-        # Major language groups for 70+ language support
-        self.language_groups = [
-            # Primary: English + Amharic
-            'eng+amh',
-            
-            # Major European languages + Arabic
-            'eng+amh+ara+fra+spa+deu+ita+por+rus+nld+pol+swe+dan+nor+fin+ell+hun+ces+ron+bul+hrv+srp+ukr',
-            
-            # Asian languages group
-            'chi_sim+chi_tra+jpn+kor+hin+ben+tel+tam+kan+mal+tha+vie',
-            
-            # Additional important languages
-            'heb+fas+urd+tur+swa+cat+eus+glg+slk+slv+lav+lit+afr+ind+mri',
-            
-            # Final fallback: English only
-            'eng'
-        ]
+        # Language scripts grouped by writing system
+        self.language_scripts = {
+            'latin': ['eng', 'fra', 'spa', 'deu', 'ita', 'por', 'nld', 'swe', 'dan', 'nor', 'fin', 'pol', 'ces', 'hun', 'ron', 'hrv', 'srp', 'slk', 'slv', 'lav', 'lit', 'est', 'lav', 'glg', 'cat', 'eus'],
+            'cyrillic': ['rus', 'ukr', 'bul', 'bel', 'srp'],  # Serbian can be both
+            'arabic': ['ara', 'fas', 'urd', 'uig'],
+            'devanagari': ['hin', 'nep', 'mar', 'san'],
+            'bengali': ['ben'],
+            'chinese': ['chi_sim', 'chi_tra'],
+            'japanese': ['jpn'],
+            'korean': ['kor'],
+            'ethiopic': ['amh', 'tir', 'orm'],
+            'hebrew': ['heb'],
+            'thai': ['tha'],
+            'vietnamese': ['vie'],
+            'greek': ['ell'],
+            'turkish': ['tur'],
+        }
         
-        # Filter language groups to only include available languages
-        self.filtered_language_groups = []
-        for group in self.language_groups:
-            available_langs = '+'.join([lang for lang in group.split('+') 
-                                      if lang in self.available_languages])
-            if available_langs:
-                self.filtered_language_groups.append(available_langs)
-        
-        logger.info(f"✅ Smart OCR Processor initialized with {len(self.available_languages)} languages")
-        logger.info(f"🔧 Using {len(self.filtered_language_groups)} language groups")
+        logger.info(f"✅ Universal OCR Processor initialized with {len(self.available_languages)} languages")
     
     async def extract_text_smart(self, image_bytes: bytes) -> str:
-        """70+ language OCR extraction with intelligent fallbacks"""
+        """Universal OCR extraction that handles all languages intelligently"""
         start_time = time.time()
         
         try:
-            # Step 1: Fast preprocessing
-            processed_img = await asyncio.wait_for(
-                self._fast_preprocess(image_bytes),
+            # Step 1: Enhanced preprocessing
+            processed_img, quality_info = await asyncio.wait_for(
+                self._enhanced_preprocess(image_bytes),
                 timeout=5.0
             )
             
-            # Step 2: Multi-language extraction (70+ languages) - PRIMARY PATH
+            logger.info(f"🔍 Image quality: {quality_info['quality']} (blur: {quality_info['blur_score']:.1f})")
+            
+            # Step 2: Universal language extraction
             extracted_text = await asyncio.wait_for(
-                self._multi_language_extraction(processed_img),
-                timeout=20.0
+                self._universal_language_extraction(processed_img, quality_info),
+                timeout=25.0
             )
             
             processing_time = time.time() - start_time
             
-            if extracted_text and self._is_reasonable_text(extracted_text):
-                logger.info(f"✅ Multi-language OCR completed in {processing_time:.2f}s - {len(extracted_text)} chars")
-                return extracted_text
+            if extracted_text and self._is_meaningful_text(extracted_text):
+                # Clean and format the text
+                cleaned_text = self._clean_extracted_text(extracted_text)
+                logger.info(f"✅ Universal OCR completed in {processing_time:.2f}s - {len(cleaned_text)} chars")
+                return cleaned_text
             else:
-                # Step 3: Fallback to original logic if multi-language fails
-                logger.info("🔄 Multi-language failed, trying original logic...")
-                probable_language = await asyncio.wait_for(
-                    self._quick_language_detection(processed_img),
-                    timeout=5.0
-                )
-                
-                logger.info(f"🔍 Detected language: {probable_language}")
-                
-                fallback_text = await asyncio.wait_for(
-                    self._reliable_extraction(processed_img, probable_language),
-                    timeout=15.0
-                )
-                
-                if fallback_text and self._is_reasonable_text(fallback_text):
-                    logger.info(f"✅ Fallback OCR completed in {processing_time:.2f}s - {len(fallback_text)} chars")
-                    return fallback_text
-                else:
-                    # Final emergency fallback
-                    final_text = await self._final_fallback(processed_img)
-                    if final_text and self._is_reasonable_text(final_text):
-                        logger.info(f"✅ Emergency fallback completed in {processing_time:.2f}s")
-                        return final_text
-                    else:
-                        logger.warning("❌ No reasonable text extracted after all attempts")
-                        return "No readable text found. Please ensure the image contains clear, focused text."
+                logger.warning("❌ No meaningful text extracted")
+                return "No readable text found. Please ensure the image contains clear, focused text."
                 
         except asyncio.TimeoutError:
             logger.warning("OCR processing timeout")
@@ -131,41 +98,9 @@ class SmartOCRProcessor:
             logger.error(f"OCR processing error: {e}")
             return "Error processing image. Please try again with a different image."
     
-    async def _multi_language_extraction(self, image: np.ndarray) -> str:
-        """Extract text using 70+ language support - PRIMARY EXTRACTION METHOD"""
-        if not self.filtered_language_groups:
-            logger.warning("No language groups available, skipping multi-language extraction")
-            return ""
-            
-        loop = asyncio.get_event_loop()
-        
-        # Try each language group
-        for i, lang_group in enumerate(self.filtered_language_groups):
-            try:
-                logger.info(f"🌐 Trying language group {i+1}/{len(self.filtered_language_groups)}: {lang_group}")
-                
-                text = await loop.run_in_executor(
-                    self.executor,
-                    pytesseract.image_to_string,
-                    image, lang_group, self.configs['multi_language']
-                )
-                
-                if text and self._is_reasonable_text(text):
-                    logger.info(f"✅ Language group success: {len(text.strip())} chars")
-                    return text.strip()
-                else:
-                    logger.debug(f"Language group {lang_group} produced no reasonable text")
-                    
-            except Exception as e:
-                logger.debug(f"Language group {lang_group} failed: {e}")
-                continue
-        
-        return ""
-    
-    async def _fast_preprocess(self, image_bytes: bytes) -> np.ndarray:
-        """Fast and reliable image preprocessing"""
+    async def _enhanced_preprocess(self, image_bytes: bytes) -> Tuple[np.ndarray, dict]:
+        """Enhanced preprocessing with quality analysis"""
         try:
-            # Convert to numpy array
             nparr = np.frombuffer(image_bytes, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
@@ -175,216 +110,284 @@ class SmartOCRProcessor:
             # Convert to grayscale
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             
-            # Simple resize if too large
-            height, width = gray.shape
-            if max(height, width) > 1200:
-                scale = 1200 / max(height, width)
+            # Quality analysis
+            blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
+            contrast = gray.std()
+            
+            quality_info = {
+                'blur_score': blur_score,
+                'contrast': contrast,
+                'quality': 'excellent' if blur_score > 2000 else 'good' if blur_score > 500 else 'poor' if blur_score > 100 else 'very_poor'
+            }
+            
+            # Enhanced processing based on quality
+            if blur_score < 300:  # Blurry image
+                logger.info("🔄 Applying advanced blurry image enhancement")
+                
+                # Multiple enhancement techniques
+                # 1. Noise reduction
+                denoised = cv2.medianBlur(gray, 3)
+                
+                # 2. Sharpening
+                kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+                sharpened = cv2.filter2D(denoised, -1, kernel)
+                
+                # 3. Contrast enhancement
+                alpha = 1.8
+                beta = 20
+                enhanced = cv2.convertScaleAbs(sharpened, alpha=alpha, beta=beta)
+                
+                # 4. CLAHE for local contrast
+                clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+                enhanced = clahe.apply(enhanced)
+            else:
+                # Normal enhancement for clear images
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                enhanced = clahe.apply(gray)
+            
+            # Resize if too large (better for OCR accuracy)
+            height, width = enhanced.shape
+            if max(height, width) > 1600:
+                scale = 1600 / max(height, width)
                 new_width = int(width * scale)
                 new_height = int(height * scale)
-                gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+                enhanced = cv2.resize(enhanced, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
             
-            # Basic contrast enhancement
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
-            
-            return enhanced
+            return enhanced, quality_info
             
         except Exception as e:
-            logger.error(f"Fast preprocessing failed: {e}")
-            # Simple fallback
+            logger.error(f"Enhanced preprocessing failed: {e}")
+            # Fallback to basic processing
             image = Image.open(io.BytesIO(image_bytes)).convert('L')
-            return np.array(image)
+            img_array = np.array(image)
+            quality_info = {'blur_score': 100, 'contrast': 50, 'quality': 'unknown'}
+            return img_array, quality_info
     
-    async def _quick_language_detection(self, image: np.ndarray) -> str:
-        """Quick and reliable language detection"""
-        loop = asyncio.get_event_loop()
+    async def _universal_language_extraction(self, image: np.ndarray, quality_info: dict) -> str:
+        """Universal language extraction that handles all writing systems"""
+        loop = asyncio.get_event_loop()  # FIXED: Use get_event_loop() instead of get_executor()
         
-        # Try quick English extraction
-        try:
-            english_text = await loop.run_in_executor(
-                self.executor,
-                pytesseract.image_to_string,
-                image, 'eng', self.configs['english_standard']
-            )
-            
-            if english_text and self._looks_like_english(english_text):
-                return 'english'
-        except:
-            pass
+        # Choose config based on image quality
+        if quality_info['blur_score'] < 300:
+            base_config = self.configs['blurry']
+        else:
+            base_config = self.configs['standard']
         
-        # Try quick Amharic extraction
-        try:
-            amharic_text = await loop.run_in_executor(
-                self.executor,
-                pytesseract.image_to_string,
-                image, 'amh', self.configs['amharic_standard']
-            )
-            
-            if amharic_text and self._looks_like_amharic(amharic_text):
-                return 'amharic'
-        except:
-            pass
+        # Strategy 1: Try script-based language groups (most effective)
+        script_results = await self._try_script_based_extraction(image, base_config, loop)
+        if script_results:
+            best_result = max(script_results, key=lambda x: x['score'])
+            if best_result['score'] > 0.7:  # High confidence
+                logger.info(f"🏆 Script-based winner: {best_result['script']} (score: {best_result['score']:.2f})")
+                return best_result['text']
         
-        # Default to auto
-        return 'auto'
+        # Strategy 2: Try individual major languages
+        individual_results = await self._try_individual_languages(image, base_config, loop)
+        if individual_results:
+            best_individual = max(individual_results, key=lambda x: x['score'])
+            if best_individual['score'] > 0.6:
+                logger.info(f"🔤 Individual winner: {best_individual['lang']} (score: {best_individual['score']:.2f})")
+                return best_individual['text']
+        
+        # Strategy 3: Try auto-detection with different PSM modes
+        auto_results = await self._try_auto_detection(image, loop)
+        if auto_results:
+            best_auto = max(auto_results, key=lambda x: x['score'])
+            logger.info(f"🤖 Auto-detection winner: PSM{best_auto['psm']} (score: {best_auto['score']:.2f})")
+            return best_auto['text']
+        
+        return ""
     
-    async def _reliable_extraction(self, image: np.ndarray, language: str) -> str:
-        """Reliable text extraction with fallbacks"""
-        loop = asyncio.get_event_loop()
+    async def _try_script_based_extraction(self, image: np.ndarray, base_config: str, loop) -> List[dict]:
+        """Try extraction by language script groups"""
+        results = []
         
-        strategies = {
-            'english': [
-                ('eng', self.configs['english_standard'], 'English Standard'),
-                ('eng', self.configs['document'], 'English Document'),
-            ],
-            'amharic': [
-                ('amh', self.configs['amharic_standard'], 'Amharic Standard'),
-                ('amh', self.configs['document'], 'Amharic Document'),
-            ],
-            'auto': [
-                ('eng', self.configs['auto'], 'Auto English'),
-                ('amh', self.configs['auto'], 'Auto Amharic'),
-                ('eng+amh', self.configs['auto'], 'Auto Combined'),
-            ]
-        }
-        
-        strategies_list = strategies.get(language, strategies['auto'])
-        
-        for lang, config, strategy_name in strategies_list:
+        for script_name, languages in self.language_scripts.items():
+            # Filter to available languages only
+            available_langs = [lang for lang in languages if lang in self.available_languages]
+            if not available_langs:
+                continue
+                
+            lang_group = '+'.join(available_langs[:8])  # Limit to 8 languages per group
+            
             try:
-                # Skip if language not available
-                if lang and lang not in self.available_languages:
-                    continue
-                    
                 text = await loop.run_in_executor(
                     self.executor,
                     pytesseract.image_to_string,
-                    image, lang, config
+                    image, lang_group, base_config
                 )
                 
-                if text and len(text.strip()) > 2:  # Lower threshold
-                    logger.info(f"📊 {strategy_name}: {len(text.strip())} chars")
-                    
-                    # Basic validation
-                    if self._is_reasonable_text(text):
-                        return text.strip()
+                if text and self._is_meaningful_text(text):
+                    confidence = self._calculate_text_confidence(text, script_name)
+                    if confidence > 0.3:  # Minimum confidence threshold
+                        results.append({
+                            'script': script_name,
+                            'text': text,
+                            'score': confidence,
+                            'languages': available_langs
+                        })
+                        logger.info(f"📜 {script_name} script: {len(text.strip())} chars (score: {confidence:.2f})")
                         
             except Exception as e:
-                logger.debug(f"Strategy {strategy_name} failed: {e}")
+                logger.debug(f"Script {script_name} failed: {e}")
                 continue
         
-        return ""
+        return results
     
-    async def _final_fallback(self, image: np.ndarray) -> str:
-        """Final fallback attempts"""
-        loop = asyncio.get_event_loop()
+    async def _try_individual_languages(self, image: np.ndarray, base_config: str, loop) -> List[dict]:
+        """Try individual major languages"""
+        results = []
         
-        fallback_attempts = [
-            ('eng', self.configs['single_line'], 'Fallback English'),
-            ('amh', self.configs['single_line'], 'Fallback Amharic'),
-            ('', self.configs['single_line'], 'Fallback Auto'),
-        ]
+        # Major languages to try individually
+        major_languages = ['eng', 'amh', 'ara', 'chi_sim', 'chi_tra', 'jpn', 'kor', 'rus', 'fra', 'spa', 'deu', 'ita', 'por', 'hin', 'ben', 'tur', 'heb', 'tha', 'vie']
         
-        for lang, config, attempt_name in fallback_attempts:
+        for lang in major_languages:
+            if lang not in self.available_languages:
+                continue
+                
             try:
-                # Skip if language not available
-                if lang and lang not in self.available_languages:
-                    continue
-                    
                 text = await loop.run_in_executor(
                     self.executor,
                     pytesseract.image_to_string,
-                    image, lang, config
+                    image, lang, base_config
                 )
                 
-                if text and len(text.strip()) > 1:
-                    logger.info(f"🔄 {attempt_name} found text: {len(text.strip())} chars")
-                    return text.strip()
-                    
+                if text and self._is_meaningful_text(text):
+                    confidence = self._calculate_text_confidence(text, 'individual')
+                    if confidence > 0.4:
+                        results.append({
+                            'lang': lang,
+                            'text': text,
+                            'score': confidence
+                        })
+                        logger.info(f"🎯 Individual {lang}: {len(text.strip())} chars (score: {confidence:.2f})")
+                        
             except Exception as e:
-                logger.debug(f"Fallback {attempt_name} failed: {e}")
+                logger.debug(f"Individual {lang} failed: {e}")
                 continue
         
-        return ""
+        return results
     
-    def _looks_like_english(self, text: str) -> bool:
-        """Check if text looks like English (permissive)"""
-        if not text or len(text.strip()) < 3:
-            return False
+    async def _try_auto_detection(self, image: np.ndarray, loop) -> List[dict]:
+        """Try auto-detection with different PSM modes"""
+        results = []
+        psm_modes = ['6', '3', '7', '8', '13']  # Different segmentation modes
         
-        # Count English characters
-        english_chars = sum(1 for c in text if c.isalpha() and c.isascii())
-        total_alpha = len([c for c in text if c.isalpha()])
+        for psm in psm_modes:
+            try:
+                config = f"--oem 3 --psm {psm}"
+                text = await loop.run_in_executor(
+                    self.executor,
+                    pytesseract.image_to_string,
+                    image, 'eng', config  # Use English as base for auto-detection
+                )
+                
+                if text and self._is_meaningful_text(text):
+                    confidence = self._calculate_text_confidence(text, 'auto')
+                    results.append({
+                        'psm': psm,
+                        'text': text,
+                        'score': confidence
+                    })
+                    logger.info(f"🔧 Auto PSM{psm}: {len(text.strip())} chars (score: {confidence:.2f})")
+                    
+            except Exception as e:
+                logger.debug(f"Auto PSM{psm} failed: {e}")
+                continue
         
-        if total_alpha == 0:
-            return False
-        
-        # Lower threshold for English detection
-        return (english_chars / total_alpha) > 0.6
+        return results
     
-    def _looks_like_amharic(self, text: str) -> bool:
-        """Check if text looks like Amharic (permissive)"""
-        if not text or len(text.strip()) < 3:
-            return False
-        
-        # Count Amharic characters
-        amharic_chars = sum(1 for c in text if '\u1200' <= c <= '\u137F')
-        total_alpha = len([c for c in text if c.isalpha()])
-        
-        if total_alpha == 0:
-            return False
-        
-        # Lower threshold for Amharic detection
-        return (amharic_chars / total_alpha) > 0.2
-    
-    def _is_reasonable_text(self, text: str) -> bool:
-        """Check if text is reasonable (permissive validation)"""
-        if not text or len(text.strip()) < 3:
-            return False
-        
-        # Remove whitespace and check minimum length
+    def _calculate_text_confidence(self, text: str, method: str) -> float:
+        """Calculate confidence score for extracted text"""
         clean_text = text.strip()
-        if len(clean_text) < 3:
+        if not clean_text:
+            return 0.0
+        
+        # Base score from text quality
+        score = 0.5
+        
+        # Length bonus (normalized)
+        length_score = min(len(clean_text) / 200, 0.3)
+        score += length_score
+        
+        # Word count bonus
+        words = clean_text.split()
+        if len(words) >= 3:
+            score += 0.2
+        
+        # Character diversity bonus
+        unique_ratio = len(set(clean_text)) / len(clean_text)
+        if unique_ratio > 0.5:
+            score += 0.1
+        
+        # Penalize excessive special characters
+        special_chars = sum(1 for c in clean_text if not c.isalnum() and not c.isspace())
+        special_ratio = special_chars / len(clean_text)
+        if special_ratio > 0.3:
+            score -= 0.2
+        
+        return max(0.0, min(1.0, score))
+    
+    def _is_meaningful_text(self, text: str) -> bool:
+        """Check if text is meaningful and not garbage"""
+        if not text or len(text.strip()) < 10:
             return False
         
-        # Check for reasonable character diversity
+        clean_text = text.strip()
+        
+        # Check character diversity
         unique_chars = len(set(clean_text))
-        if unique_chars < 2:
+        if unique_chars < 5:
             return False
         
-        # Check if it's not just repeated characters
-        if len(clean_text) > 5:
+        # Check word structure
+        words = clean_text.split()
+        if len(words) < 3:
+            return False
+        
+        # Check for reasonable word lengths
+        avg_word_length = sum(len(word) for word in words) / len(words)
+        if avg_word_length < 1.5 or avg_word_length > 15:
+            return False
+        
+        # Check for excessive special characters
+        special_chars = sum(1 for c in clean_text if not c.isalnum() and not c.isspace())
+        if special_chars > len(clean_text) * 0.4:
+            return False
+        
+        # Check for repeated nonsense
+        if len(clean_text) > 20:
             repeated_ratio = max(clean_text.count(c) for c in clean_text) / len(clean_text)
-            if repeated_ratio > 0.8:  # 80% same character
+            if repeated_ratio > 0.6:
                 return False
-        
-        # Basic garbage detection
-        if self._is_obvious_garbage(text):
-            return False
         
         return True
     
-    def _is_obvious_garbage(self, text: str) -> bool:
-        """Detect obvious garbage text"""
+    def _clean_extracted_text(self, text: str) -> str:
+        """Clean and format extracted text"""
         if not text:
-            return True
+            return text
         
-        # Too many special characters
-        special_chars = sum(1 for c in text if not c.isalnum() and not c.isspace())
-        if special_chars / len(text) > 0.5:
-            return True
+        # Basic cleaning
+        cleaned = text.strip()
         
-        # Repeated nonsense patterns
-        nonsense_patterns = [
-            r'^[^a-zA-Z\u1200-\u137F]*$',  # No letters at all
-            r'(.)\1{5,}',  # Same character repeated 6+ times
-        ]
+        # Remove excessive line breaks (more than 2 consecutive)
+        cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)
         
-        for pattern in nonsense_patterns:
-            if re.search(pattern, text):
-                return True
+        # Remove leading/trailing whitespace from each line
+        cleaned = '\n'.join(line.strip() for line in cleaned.split('\n'))
         
-        return False
+        # Remove page numbers and common OCR artifacts
+        cleaned = re.sub(r'^\s*[0-9ivx]+\s*$', '', cleaned, flags=re.MULTILINE)
+        
+        # Remove isolated special characters
+        cleaned = re.sub(r'^\s*[^\w\s]+\s*$', '', cleaned, flags=re.MULTILINE)
+        
+        # Final cleanup of extra whitespace
+        cleaned = re.sub(r' +', ' ', cleaned)
+        cleaned = re.sub(r'\n\s*\n', '\n\n', cleaned)
+        
+        return cleaned.strip()
 
 # Global instance
 smart_ocr_processor = SmartOCRProcessor()
