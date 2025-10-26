@@ -367,14 +367,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ENHANCED image handler with improved OCR and formatting"""
+    """ENHANCED image handler with improved OCR and persistent channel checking"""
     message = update.message
     
     try:
         # Apply channel membership check for ALL image handlers
         from handlers.start import check_channel_membership
         user_id = update.effective_user.id
-        has_joined = await check_channel_membership(update, context, user_id)
+        has_joined = await check_channel_membership(update, context, user_id, force_check=True)
         
         if not has_joined:
             from handlers.start import show_channel_requirement
@@ -386,7 +386,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Send initial message
-        processing_msg = await message.reply_text("🔄 Processing your image...")
+        processing_msg = await message.reply_text("🔄 Processing your image with enhanced OCR...")
         
         # Download image with timeout
         try:
@@ -406,18 +406,26 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         # Process with ENHANCED OCR
-        await processing_msg.edit_text("🔍 Analyzing image content...")
+        await processing_msg.edit_text("🔍 Analyzing image with enhanced text detection...")
         
         if not OCR_AVAILABLE:
             await processing_msg.edit_text("❌ OCR service is currently unavailable. Please try again later.")
             return
         
         try:
-            # Use the enhanced smart OCR processor
-            extracted_text = await asyncio.wait_for(
-                smart_ocr_processor.extract_text_smart(bytes(photo_bytes)),
-                timeout=45.0  # Increased timeout for enhanced processing
-            )
+            # Try enhanced OCR first for blurry images
+            try:
+                from utils.enhanced_ocr import enhanced_ocr_processor
+                extracted_text = await asyncio.wait_for(
+                    enhanced_ocr_processor.extract_text_enhanced(bytes(photo_bytes)),
+                    timeout=60.0  # Increased timeout for enhanced processing
+                )
+            except ImportError:
+                # Fallback to smart OCR
+                extracted_text = await asyncio.wait_for(
+                    smart_ocr_processor.extract_text_smart(bytes(photo_bytes)),
+                    timeout=45.0
+                )
             
             logger.info(f"📝 OCR completed, extracted {len(extracted_text) if extracted_text else 0} characters")
             
@@ -430,25 +438,19 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         # Handle OCR result - IMPROVED VALIDATION
-        if not extracted_text or extracted_text.startswith("No readable text") or extracted_text.startswith("Processing took") or extracted_text.startswith("Error processing"):
+        if not extracted_text or any(msg in extracted_text for msg in [
+            "No readable text", "Processing took", "Error processing", "Unable to process"
+        ]):
             await processing_msg.edit_text("❌ No text could be extracted from the image. Please ensure the image contains clear, readable text.")
             return
         
         # Enhanced text validation
         clean_text = extracted_text.strip()
-        if len(clean_text) < 5:
+        if len(clean_text) < 3:  # Reduced threshold for blurry images
             await processing_msg.edit_text("❌ Extracted text is too short or unclear. Please try with a clearer image containing more text.")
             return
         
-        # Check for meaningful text (reduced threshold for short texts)
-        if len(clean_text) > 10:
-            alpha_chars = sum(1 for c in clean_text if c.isalpha())
-            total_chars = len(clean_text)
-            if total_chars > 0 and (alpha_chars / total_chars) < 0.2:  # Reduced to 20% for global languages
-                await processing_msg.edit_text("❌ Unable to extract meaningful text. The image may be too blurry or contain mostly non-text elements.")
-                return
-        
-        # Format and send result - SIMPLIFIED OUTPUT
+        # Format and send result
         user_id = update.effective_user.id
         try:
             user = db.get_user(user_id)
@@ -458,8 +460,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Format the text using enhanced formatter
         formatted_text = TextFormatter.format_text(extracted_text, text_format)
-        
-        # REMOVED: "✅Text Extracted: (Detected:...)" - Now just send the text directly
         
         # Truncate if too long for Telegram
         if len(formatted_text) > 4000:
