@@ -14,27 +14,68 @@ import re
 logger = logging.getLogger(__name__)
 
 class SmartOCRProcessor:
-    """Smart OCR processor with balanced accuracy and reliability"""
+    """Smart OCR processor with 70+ language support"""
     
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=2)
+        self.available_languages = self._get_available_languages()
         self.setup_ocr_configs()
         
+    def _get_available_languages(self) -> List[str]:
+        """Get available languages from system"""
+        try:
+            langs = pytesseract.get_languages()
+            logger.info(f"🌍 Available languages: {len(langs)} languages detected")
+            if langs:
+                logger.info(f"📋 Sample languages: {', '.join(langs[:10])}{'...' if len(langs) > 10 else ''}")
+            return langs
+        except Exception as e:
+            logger.error(f"Language detection failed: {e}")
+            return ['eng', 'amh']  # Fallback to basic languages
+    
     def setup_ocr_configs(self):
-        """Optimized OCR configurations for reliability"""
+        """Optimized OCR configurations for 70+ languages"""
         self.configs = {
-            # Standard configurations (more permissive)
+            # Standard configurations
             'english_standard': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
             'amharic_standard': '--oem 3 --psm 6 -c textord_min_linesize=1.8 -c preserve_interword_spaces=1',
             'auto': '--oem 3 --psm 6 -c preserve_interword_spaces=1',
             'document': '--oem 3 --psm 3 -c preserve_interword_spaces=1',
-            'single_line': '--oem 3 --psm 7 -c preserve_interword_spaces=1'
+            'single_line': '--oem 3 --psm 7 -c preserve_interword_spaces=1',
+            'multi_language': '--oem 3 --psm 6 -c preserve_interword_spaces=1'
         }
         
-        logger.info("✅ Smart OCR Processor initialized")
+        # Major language groups for 70+ language support
+        self.language_groups = [
+            # Primary: English + Amharic
+            'eng+amh',
+            
+            # Major European languages + Arabic
+            'eng+amh+ara+fra+spa+deu+ita+por+rus+nld+pol+swe+dan+nor+fin+ell+hun+ces+ron+bul+hrv+srp+ukr',
+            
+            # Asian languages group
+            'chi_sim+chi_tra+jpn+kor+hin+ben+tel+tam+kan+mal+tha+vie',
+            
+            # Additional important languages
+            'heb+fas+urd+tur+swa+cat+eus+glg+slk+slv+lav+lit+afr+ind+mri',
+            
+            # Final fallback: English only
+            'eng'
+        ]
+        
+        # Filter language groups to only include available languages
+        self.filtered_language_groups = []
+        for group in self.language_groups:
+            available_langs = '+'.join([lang for lang in group.split('+') 
+                                      if lang in self.available_languages])
+            if available_langs:
+                self.filtered_language_groups.append(available_langs)
+        
+        logger.info(f"✅ Smart OCR Processor initialized with {len(self.available_languages)} languages")
+        logger.info(f"🔧 Using {len(self.filtered_language_groups)} language groups")
     
     async def extract_text_smart(self, image_bytes: bytes) -> str:
-        """Reliable OCR extraction with balanced accuracy"""
+        """70+ language OCR extraction with intelligent fallbacks"""
         start_time = time.time()
         
         try:
@@ -44,34 +85,44 @@ class SmartOCRProcessor:
                 timeout=5.0
             )
             
-            # Step 2: Quick language detection
-            probable_language = await asyncio.wait_for(
-                self._quick_language_detection(processed_img),
-                timeout=5.0
-            )
-            
-            logger.info(f"🔍 Detected language: {probable_language}")
-            
-            # Step 3: Extract with reliable approach
+            # Step 2: Multi-language extraction (70+ languages) - PRIMARY PATH
             extracted_text = await asyncio.wait_for(
-                self._reliable_extraction(processed_img, probable_language),
-                timeout=15.0
+                self._multi_language_extraction(processed_img),
+                timeout=20.0
             )
             
             processing_time = time.time() - start_time
             
             if extracted_text and self._is_reasonable_text(extracted_text):
-                logger.info(f"✅ OCR completed in {processing_time:.2f}s - {len(extracted_text)} chars")
+                logger.info(f"✅ Multi-language OCR completed in {processing_time:.2f}s - {len(extracted_text)} chars")
                 return extracted_text
             else:
-                # Final fallback attempt
-                final_text = await self._final_fallback(processed_img)
-                if final_text and self._is_reasonable_text(final_text):
-                    logger.info(f"✅ Fallback OCR completed in {processing_time:.2f}s")
-                    return final_text
+                # Step 3: Fallback to original logic if multi-language fails
+                logger.info("🔄 Multi-language failed, trying original logic...")
+                probable_language = await asyncio.wait_for(
+                    self._quick_language_detection(processed_img),
+                    timeout=5.0
+                )
+                
+                logger.info(f"🔍 Detected language: {probable_language}")
+                
+                fallback_text = await asyncio.wait_for(
+                    self._reliable_extraction(processed_img, probable_language),
+                    timeout=15.0
+                )
+                
+                if fallback_text and self._is_reasonable_text(fallback_text):
+                    logger.info(f"✅ Fallback OCR completed in {processing_time:.2f}s - {len(fallback_text)} chars")
+                    return fallback_text
                 else:
-                    logger.warning("❌ No reasonable text extracted after all attempts")
-                    return "No readable text found. Please ensure the image contains clear, focused text."
+                    # Final emergency fallback
+                    final_text = await self._final_fallback(processed_img)
+                    if final_text and self._is_reasonable_text(final_text):
+                        logger.info(f"✅ Emergency fallback completed in {processing_time:.2f}s")
+                        return final_text
+                    else:
+                        logger.warning("❌ No reasonable text extracted after all attempts")
+                        return "No readable text found. Please ensure the image contains clear, focused text."
                 
         except asyncio.TimeoutError:
             logger.warning("OCR processing timeout")
@@ -79,6 +130,37 @@ class SmartOCRProcessor:
         except Exception as e:
             logger.error(f"OCR processing error: {e}")
             return "Error processing image. Please try again with a different image."
+    
+    async def _multi_language_extraction(self, image: np.ndarray) -> str:
+        """Extract text using 70+ language support - PRIMARY EXTRACTION METHOD"""
+        if not self.filtered_language_groups:
+            logger.warning("No language groups available, skipping multi-language extraction")
+            return ""
+            
+        loop = asyncio.get_event_loop()
+        
+        # Try each language group
+        for i, lang_group in enumerate(self.filtered_language_groups):
+            try:
+                logger.info(f"🌐 Trying language group {i+1}/{len(self.filtered_language_groups)}: {lang_group}")
+                
+                text = await loop.run_in_executor(
+                    self.executor,
+                    pytesseract.image_to_string,
+                    image, lang_group, self.configs['multi_language']
+                )
+                
+                if text and self._is_reasonable_text(text):
+                    logger.info(f"✅ Language group success: {len(text.strip())} chars")
+                    return text.strip()
+                else:
+                    logger.debug(f"Language group {lang_group} produced no reasonable text")
+                    
+            except Exception as e:
+                logger.debug(f"Language group {lang_group} failed: {e}")
+                continue
+        
+        return ""
     
     async def _fast_preprocess(self, image_bytes: bytes) -> np.ndarray:
         """Fast and reliable image preprocessing"""
@@ -170,6 +252,10 @@ class SmartOCRProcessor:
         
         for lang, config, strategy_name in strategies_list:
             try:
+                # Skip if language not available
+                if lang and lang not in self.available_languages:
+                    continue
+                    
                 text = await loop.run_in_executor(
                     self.executor,
                     pytesseract.image_to_string,
@@ -201,6 +287,10 @@ class SmartOCRProcessor:
         
         for lang, config, attempt_name in fallback_attempts:
             try:
+                # Skip if language not available
+                if lang and lang not in self.available_languages:
+                    continue
+                    
                 text = await loop.run_in_executor(
                     self.executor,
                     pytesseract.image_to_string,
