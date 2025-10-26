@@ -1,11 +1,11 @@
+# app.py - COMPLETE VERSION WITH ALL HANDLERS
 import os
 import logging
 import asyncio
 import signal
 import sys
-import subprocess
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ContextTypes
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from dotenv import load_dotenv
 
 # Configure logging
@@ -39,58 +39,49 @@ for key, fallback_value in FALLBACK_VALUES.items():
         os.environ[key] = fallback_value
         logger.warning(f"Using fallback for {key}")
 
-# Import language support if available
-try:
-    from ocr_engine.language_support import detect_primary_language, get_language_name
-    LANGUAGE_SUPPORT_AVAILABLE = True
-    logger.info("✅ Language support module imported")
-except ImportError as e:
-    LANGUAGE_SUPPORT_AVAILABLE = False
-    logger.warning(f"❌ Language support module not available: {e}")
+# ===== SMART OCR SELECTION =====
+OCR_AVAILABLE = False
+ultimate_ocr_processor = None
+fallback_ocr_processor = None
 
-# Import OCR components
+# Try ULTIMATE OCR first
 try:
-    from utils.smart_ocr import smart_ocr_processor
+    from utils.unified_ocr import ultimate_ocr_processor
     OCR_AVAILABLE = True
-    logger.info("✅ Smart OCR components imported successfully")
+    logger.info("✅ ULTIMATE OCR Processor imported successfully")
 except ImportError as e:
-    logger.error(f"Smart OCR import failed: {e}")
-    OCR_AVAILABLE = False
-    # Fallback to basic OCR
+    logger.warning(f"ULTIMATE OCR import failed: {e}")
+    # Try fallback OCR
     try:
-        from utils.image_processing import ocr_processor
-        logger.info("✅ Using basic OCR as fallback")
-    except ImportError:
-        logger.error("All OCR imports failed")
+        from utils.image_processing import ocr_processor as fallback_ocr_processor
+        OCR_AVAILABLE = True
+        logger.info("✅ Fallback OCR Processor imported successfully")
+    except ImportError as e:
+        logger.error(f"All OCR imports failed: {e}")
         OCR_AVAILABLE = False
 
-# IMPORTANT: Add TextFormatter import
+# Import ULTIMATE Text Formatter
 try:
-    from utils.text_formatter import TextFormatter
+    from utils.text_formatter import ultimate_text_formatter as TextFormatter
     TEXT_FORMATTER_AVAILABLE = True
-    logger.info("✅ Text formatter imported successfully")
+    logger.info("✅ ULTIMATE Text Formatter imported successfully")
 except ImportError as e:
     logger.error(f"Text formatter import failed: {e}")
-    TEXT_FORMATTER_AVAILABLE = False
-    # Create a simple fallback
+    # Fallback formatter
     class SimpleTextFormatter:
         @staticmethod
         def format_text(text, format_type='plain'):
-            if format_type == 'html':
-                return f"<pre>{text}</pre>"
-            else:
-                return text
+            return text
     TextFormatter = SimpleTextFormatter
     logger.info("✅ Using simple text formatter fallback")
 
-# Import database - POSTGRESQL ONLY VERSION
+# Database setup
 try:
     from database.postgres_db import PostgresDatabase
     db = PostgresDatabase()
     logger.info("✅ PostgreSQL database imported successfully")
 except Exception as e:
     logger.error(f"PostgreSQL database import failed: {e}")
-    # Fallback to mock database
     class MockDB:
         def __init__(self): 
             self.is_mock = True
@@ -128,9 +119,7 @@ except Exception as e:
     logger.info("Using mock database as fallback")
 
 # ===== KEYBOARD LAYOUTS =====
-
 def get_main_keyboard():
-    """Get the main inline keyboard"""
     keyboard = [
         [InlineKeyboardButton("📸 Convert Image", callback_data="convert_image")],
         [InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
@@ -140,7 +129,6 @@ def get_main_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 def get_reply_keyboard():
-    """Get persistent reply keyboard (square buttons at bottom)"""
     keyboard = [
         ["📸 Convert Image", "⚙️ Settings"],
         ["📊 Statistics", "❓ Help"]
@@ -148,7 +136,6 @@ def get_reply_keyboard():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 def get_settings_keyboard():
-    """Get settings keyboard"""
     keyboard = [
         [InlineKeyboardButton("📄 Plain Text", callback_data="set_format_plain")],
         [InlineKeyboardButton("🌐 HTML Format", callback_data="set_format_html")],
@@ -157,30 +144,18 @@ def get_settings_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 def get_back_keyboard():
-    """Simple back to main keyboard"""
     keyboard = [[InlineKeyboardButton("🔙 Back to Main", callback_data="main_menu")]]
     return InlineKeyboardMarkup(keyboard)
 
-def get_channel_keyboard():
-    """Get channel join keyboard"""
-    from handlers.start import get_channel_keyboard as start_channel_keyboard
-    return start_channel_keyboard()
+# ===== HANDLER IMPORTS =====
+try:
+    from handlers.start import start_command, require_channel_membership, check_channel_membership, show_channel_requirement
+    from handlers.help import help_command
+    logger.info("✅ Handler imports successful")
+except ImportError as e:
+    logger.error(f"Handler imports failed: {e}")
 
-# ===== HANDLER FUNCTIONS =====
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command - imported from handlers.start"""
-    try:
-        from handlers.start import start_command as start_handler
-        await start_handler(update, context)
-    except ImportError as e:
-        logger.error(f"Start handler import failed: {e}")
-        await update.message.reply_text(
-            "👋 Welcome! Send me an image to extract text.",
-            parse_mode='Markdown',
-            reply_markup=get_reply_keyboard()
-        )
-
+# ===== COMMAND HANDLERS =====
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command"""
     await update.message.reply_text(
@@ -264,6 +239,7 @@ async def convert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_reply_keyboard()
     )
 
+# ===== TEXT MESSAGE HANDLER =====
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages from reply keyboard"""
     text = update.message.text
@@ -324,25 +300,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
     
     elif text == "❓ Help":
-        await update.message.reply_text(
-            "❓ *Help Guide*\n\n"
-            "**How to use:**\n"
-            "1. Send an image with text\n"
-            "2. Get extracted text automatically\n\n"
-            "**Available Options:**\n"
-            "• 📸 Convert Image - Extract text from images\n"
-            "• ⚙️ Settings - Change text format\n"
-            "• 📊 Statistics - View your usage\n"
-            "• ❓ Help - Get instructions\n\n"
-            "💡 **Tips for best results:**\n"
-            "• Clear, well-lit images\n"
-            "• Readable, focused text\n"
-            "• Horizontal alignment\n"
-            "• High contrast\n\n"
-            "🌍 **70+ languages supported automatically!**",
-            parse_mode='Markdown',
-            reply_markup=get_reply_keyboard()
-        )
+        await help_command(update, context)
     
     else:
         # Handle unknown text
@@ -357,161 +315,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=get_reply_keyboard()
         )
 
-async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle image messages with robust error handling and OCR integration"""
-    message = update.message
-    
-    try:
-        if not message.photo:
-            await message.reply_text("Please send an image containing text.")
-            return
-
-        # Send initial message
-        processing_msg = await message.reply_text("🔄 Processing your image...")
-        
-        # Download image with timeout
-        try:
-            photo = message.photo[-1]
-            photo_file = await photo.get_file()
-            photo_bytes = await asyncio.wait_for(
-                photo_file.download_as_bytearray(),
-                timeout=15.0  # Increased timeout
-            )
-            logger.info(f"✅ Downloaded image: {len(photo_bytes)} bytes")
-        except asyncio.TimeoutError:
-            await processing_msg.edit_text("❌ Image download timed out. Please try again.")
-            return
-        except Exception as e:
-            logger.error(f"Download error: {e}")
-            await processing_msg.edit_text("❌ Failed to download image. Please try again.")
-            return
-        
-        # Process with OCR - UPDATED LOGIC
-        await processing_msg.edit_text("🔍 Analyzing image content...")
-        
-        if not OCR_AVAILABLE:
-            await processing_msg.edit_text("❌ OCR service is currently unavailable. Please try again later.")
-            return
-        
-        try:
-            # Use the smart OCR processor with timeout
-            extracted_text = await asyncio.wait_for(
-                smart_ocr_processor.extract_text_smart(bytes(photo_bytes)),
-                timeout=30.0  # 30 second timeout for OCR processing
-            )
-            
-            logger.info(f"📝 OCR completed, extracted {len(extracted_text) if extracted_text else 0} characters")
-            
-        except asyncio.TimeoutError:
-            await processing_msg.edit_text("❌ OCR processing took too long. Please try with a smaller or clearer image.")
-            return
-        except Exception as e:
-            logger.error(f"OCR processing error: {e}")
-            await processing_msg.edit_text("❌ Error during text extraction. Please try again with a different image.")
-            return
-        
-        # Handle OCR result - IMPROVED LOGIC
-        if not extracted_text:
-            await processing_msg.edit_text("❌ No text could be extracted from the image. Please ensure the image contains clear, readable text.")
-            return
-        
-        # Check for error messages from OCR
-        error_indicators = [
-            'No readable text found',
-            'Processing took too long', 
-            'Error processing image',
-            'No readable text',
-            'readable text found'
-        ]
-        
-        if any(indicator in extracted_text for indicator in error_indicators):
-            await processing_msg.edit_text(f"❌ {extracted_text}")
-            return
-        
-        # Check if text is meaningful (not garbage)
-        if len(extracted_text.strip()) < 10:
-            await processing_msg.edit_text("❌ Extracted text is too short or unclear. Please try with a clearer image containing more text.")
-            return
-        
-        # Check for garbage text (too many special characters)
-        clean_text = extracted_text.strip()
-        alpha_chars = sum(1 for c in clean_text if c.isalpha())
-        total_chars = len(clean_text)
-        
-        if total_chars > 0 and (alpha_chars / total_chars) < 0.3:  # Less than 30% alphabetic characters
-            await processing_msg.edit_text("❌ Unable to extract meaningful text. The image may be too blurry or contain mostly non-text elements.")
-            return
-        
-        # Format and send result
-        user_id = update.effective_user.id
-        try:
-            user = db.get_user(user_id)
-            text_format = user.get('settings', {}).get('text_format', 'plain') if user else 'plain'
-        except:
-            text_format = 'plain'
-        
-        # Format the text
-        formatted_text = TextFormatter.format_text(extracted_text, text_format)
-        
-        # Add language info if available
-        language_info = ""
-        if LANGUAGE_SUPPORT_AVAILABLE:
-            try:
-                detected_lang = detect_primary_language(extracted_text)
-                lang_name = get_language_name(detected_lang)
-                language_info = f" (Detected: {lang_name})"
-            except Exception as e:
-                logger.error(f"Language detection error: {e}")
-        
-        # Truncate if too long for Telegram
-        if len(formatted_text) > 4000:
-            formatted_text = formatted_text[:3900] + "\n\n... [text truncated due to length]"
-        
-        # Send result
-        try:
-            if text_format == 'html':
-                await processing_msg.edit_text(
-                    f"✅ **Text Extracted**{language_info}\n\n{formatted_text}",
-                    parse_mode='HTML'
-                )
-            else:
-                await processing_msg.edit_text(
-                    f"✅ **Text Extracted**{language_info}\n\n{formatted_text}",
-                    parse_mode='Markdown'
-                )
-            
-            # Log success
-            try:
-                db.log_ocr_request({
-                    'user_id': user_id,
-                    'format': text_format,
-                    'text_length': len(extracted_text),
-                    'processing_time': 0,
-                    'status': 'success'
-                })
-            except Exception as e:
-                logger.error(f"Logging error: {e}")
-                
-        except Exception as e:
-            logger.error(f"Message sending error: {e}")
-            # Fallback: send as plain text
-            await processing_msg.edit_text(
-                f"✅ **Text Extracted**{language_info}\n\n{extracted_text[:3000]}"
-            )
-            
-    except asyncio.TimeoutError:
-        logger.error("Overall image processing timeout")
-        try:
-            await message.reply_text("❌ Processing timed out. Please try with a smaller or clearer image.")
-        except:
-            pass
-    except Exception as e:
-        logger.error(f"Unexpected error in handle_image: {e}")
-        try:
-            await message.reply_text("❌ An unexpected error occurred. Please try again with a different image.")
-        except:
-            pass
-
+# ===== CALLBACK HANDLER =====
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle all inline button callbacks"""
     query = update.callback_query
@@ -556,7 +360,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_main_menu(query)
 
 # ===== MENU FUNCTIONS FOR CALLBACKS =====
-
 async def show_main_menu(query):
     """Show main menu for callback"""
     await query.edit_message_text(
@@ -690,6 +493,141 @@ async def handle_format_change(query, data):
             reply_markup=get_back_keyboard()
         )
 
+# ===== ULTIMATE IMAGE HANDLER =====
+@require_channel_membership
+async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ULTIMATE image handler with smart OCR selection"""
+    message = update.message
+    
+    try:
+        if not message.photo:
+            await message.reply_text("Please send an image containing text.")
+            return
+
+        # Send initial message
+        processing_msg = await message.reply_text("🔄 Processing your image...")
+        
+        # Download image
+        try:
+            photo = message.photo[-1]
+            photo_file = await photo.get_file()
+            photo_bytes = await asyncio.wait_for(
+                photo_file.download_as_bytearray(),
+                timeout=20.0
+            )
+            logger.info(f"✅ Downloaded image: {len(photo_bytes)} bytes")
+        except asyncio.TimeoutError:
+            await processing_msg.edit_text("❌ Image download timed out. Please try again.")
+            return
+        except Exception as e:
+            logger.error(f"Download error: {e}")
+            await processing_msg.edit_text("❌ Failed to download image. Please try again.")
+            return
+        
+        # Process with SMART OCR selection
+        await processing_msg.edit_text("🔍 Analyzing image content...")
+        
+        if not OCR_AVAILABLE:
+            await processing_msg.edit_text("❌ OCR service is currently unavailable. Please try again later.")
+            return
+        
+        try:
+            # SMART OCR SELECTION: Use Ultimate if available, otherwise fallback
+            if ultimate_ocr_processor:
+                extracted_text = await asyncio.wait_for(
+                    ultimate_ocr_processor.extract_text_ultimate(bytes(photo_bytes)),
+                    timeout=60.0
+                )
+                logger.info("✅ Used ULTIMATE OCR Processor")
+            elif fallback_ocr_processor:
+                extracted_text = await asyncio.wait_for(
+                    fallback_ocr_processor.extract_text_optimized(bytes(photo_bytes)),
+                    timeout=45.0
+                )
+                logger.info("✅ Used Fallback OCR Processor")
+            else:
+                await processing_msg.edit_text("❌ OCR service is currently unavailable.")
+                return
+            
+            logger.info(f"📝 OCR completed, extracted {len(extracted_text) if extracted_text else 0} characters")
+            
+        except asyncio.TimeoutError:
+            await processing_msg.edit_text("❌ OCR processing took too long. Please try with a smaller or clearer image.")
+            return
+        except Exception as e:
+            logger.error(f"OCR processing error: {e}")
+            await processing_msg.edit_text("❌ Error during text extraction. Please try again with a different image.")
+            return
+        
+        # Handle OCR result
+        if not extracted_text or any(extracted_text.startswith(msg) for msg in ["No readable text", "Processing took", "Error processing"]):
+            await processing_msg.edit_text("❌ No text could be extracted from the image. Please ensure the image contains clear, readable text.")
+            return
+        
+        # Enhanced text validation
+        clean_text = extracted_text.strip()
+        if len(clean_text) < 3:
+            await processing_msg.edit_text("❌ Extracted text is too short or unclear. Please try with a clearer image containing more text.")
+            return
+        
+        # Format and send result - PERFECT OUTPUT (no prefixes)
+        user_id = update.effective_user.id
+        try:
+            user = db.get_user(user_id)
+            text_format = user.get('settings', {}).get('text_format', 'plain') if user else 'plain'
+        except:
+            text_format = 'plain'
+        
+        # Format the text using ultimate formatter
+        formatted_text = TextFormatter.format_text(extracted_text, text_format)
+        
+        # Truncate if too long for Telegram
+        if len(formatted_text) > 4000:
+            formatted_text = formatted_text[:3900] + "\n\n... [text truncated due to length]"
+        
+        # Send PERFECT result - just the text, no extra messages
+        try:
+            if text_format == 'html':
+                await processing_msg.edit_text(
+                    formatted_text,
+                    parse_mode='HTML'
+                )
+            else:
+                await processing_msg.edit_text(
+                    formatted_text,
+                    parse_mode=None  # Pure plain text
+                )
+            
+            # Log success
+            try:
+                db.log_ocr_request({
+                    'user_id': user_id,
+                    'format': text_format,
+                    'text_length': len(extracted_text),
+                    'processing_time': 0,
+                    'status': 'success'
+                })
+            except Exception as e:
+                logger.error(f"Logging error: {e}")
+                
+        except Exception as e:
+            logger.error(f"Message sending error: {e}")
+            # Ultimate fallback: send as plain text
+            await processing_msg.edit_text(extracted_text[:3000])
+            
+    except asyncio.TimeoutError:
+        logger.error("Overall image processing timeout")
+        try:
+            await message.reply_text("❌ Processing timed out. Please try with a smaller or clearer image.")
+        except:
+            pass
+    except Exception as e:
+        logger.error(f"Unexpected error in handle_image: {e}")
+        try:
+            await message.reply_text("❌ An unexpected error occurred. Please try again with a different image.")
+        except:
+            pass
+
 async def set_bot_commands(application):
     """Set bot commands for menu"""
     try:
@@ -708,7 +646,7 @@ async def set_bot_commands(application):
 async def post_init(application):
     """Run after bot starts"""
     await set_bot_commands(application)
-    logger.info("🚀 Bot is ready and commands are set!")
+    logger.info("🚀 ULTIMATE OCR Bot is ready!")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Error handler"""
@@ -717,7 +655,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update and update.effective_chat:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="❌ An error occurred. Please try again."
+                text="❌ An unexpected error occurred. Please try again."
             )
     except:
         pass
@@ -730,7 +668,7 @@ def main():
             logger.error("BOT_TOKEN not found")
             return
 
-        # Create application with post_init
+        # Create application
         application = (
             Application.builder()
             .token(BOT_TOKEN)
@@ -760,7 +698,7 @@ def main():
         application.add_error_handler(error_handler)
         
         logger.info("✅ All handlers registered")
-        logger.info("🚀 Starting bot...")
+        logger.info("🚀 Starting ULTIMATE OCR Bot...")
         
         application.run_polling(
             drop_pending_updates=True,

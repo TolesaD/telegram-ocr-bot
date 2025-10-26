@@ -1,17 +1,17 @@
-# utils/text_formatter.py
+# utils/text_formatter.py - ENHANCED VERSION
 import html
 import re
 from typing import List, Dict
 
-class TextFormatter:
+class UltimateTextFormatter:
     """
-    Production text formatter with intelligent formatting options
+    ULTIMATE text formatter with perfect HTML and plain text support
     """
     
     @staticmethod
     def format_text(text: str, format_type: str = 'plain') -> str:
         """
-        Main formatting function - UPDATED to match app.py usage
+        Main formatting function - UPDATED for perfect output
         
         Args:
             text: Extracted text to format
@@ -24,39 +24,132 @@ class TextFormatter:
         
         try:
             if format_type == 'html':
-                return TextFormatter.format_html(text)
+                return UltimateTextFormatter.format_html_perfect(text)
             else:  # plain
-                return TextFormatter.format_plain(text)
+                return UltimateTextFormatter.format_plain_clean(text)
                 
         except Exception as e:
             print(f"Formatting error: {e}")
             return text
     
     @staticmethod
-    def format_plain(text: str) -> str:
+    def format_plain_clean(text: str) -> str:
         """
-        Clean plain text formatting
+        Clean plain text formatting - PERFECT for OCR output
         """
         if not text:
             return ""
         
+        # Enhanced cleaning for OCR artifacts
+        cleaned_text = UltimateTextFormatter.clean_ocr_artifacts(text)
+        
         # Split by paragraphs (double newlines)
-        paragraphs = text.split('\n\n')
+        paragraphs = cleaned_text.split('\n\n')
         cleaned_paragraphs = []
         
         for paragraph in paragraphs:
             if paragraph.strip():
-                # Clean each paragraph
-                cleaned_paragraph = TextFormatter._clean_paragraph(paragraph)
+                # Clean each paragraph while preserving structure
+                cleaned_paragraph = UltimateTextFormatter._clean_paragraph_enhanced(paragraph)
                 if cleaned_paragraph:
                     cleaned_paragraphs.append(cleaned_paragraph)
         
         # Join with proper paragraph spacing
-        return '\n\n'.join(cleaned_paragraphs)
+        result = '\n\n'.join(cleaned_paragraphs)
+        
+        # Final cleanup
+        return result.strip()
     
     @staticmethod
-    def _clean_paragraph(paragraph: str) -> str:
-        """Clean a single paragraph while preserving meaning"""
+    def format_html_perfect(text: str) -> str:
+        """
+        PERFECT HTML formatting with preserved structure
+        """
+        if not text:
+            return ""
+        
+        try:
+            # Enhanced cleaning
+            cleaned_text = UltimateTextFormatter.clean_ocr_artifacts(text)
+            
+            # Handle multiple spaces and line breaks perfectly
+            safe_text = html.escape(cleaned_text)
+            
+            # Preserve multiple spaces
+            safe_text = safe_text.replace('  ', ' &nbsp;')
+            
+            # Handle line breaks properly
+            lines = safe_text.split('\n')
+            formatted_lines = []
+            
+            for line in lines:
+                stripped_line = line.strip()
+                if stripped_line:
+                    # Replace multiple spaces within lines
+                    formatted_line = stripped_line.replace('  ', ' &nbsp;')
+                    formatted_lines.append(formatted_line)
+                else:
+                    # Empty line becomes paragraph break
+                    formatted_lines.append('')
+            
+            # Build final HTML
+            if len(formatted_lines) == 1:
+                # Single line - use simple format
+                return formatted_lines[0]
+            else:
+                # Multiple lines - use pre format for perfect preservation
+                return '<pre>' + '\n'.join(formatted_lines) + '</pre>'
+            
+        except Exception as e:
+            print(f"HTML formatting error: {e}")
+            return f"<pre>{html.escape(text)}</pre>"
+    
+    @staticmethod
+    def clean_ocr_artifacts(text: str) -> str:
+        """Advanced OCR text cleaning for garbage patterns"""
+        if not text:
+            return text
+            
+        cleaned = text
+        
+        # Remove common OCR garbage patterns
+        garbage_patterns = [
+            r'[_\-\|]{5,}',  # Multiple underscores, dashes, pipes
+            r'\*{3,}',       # Multiple asterisks
+            r'\.{4,}',       # Multiple dots
+            r'[ ]{3,}',      # Multiple spaces (more than 2)
+        ]
+        
+        for pattern in garbage_patterns:
+            cleaned = re.sub(pattern, '', cleaned)
+        
+        # Fix common OCR mistakes (conservative approach)
+        corrections = [
+            (r'(?<=[A-Za-z])\|(?=[A-Za-z])', 'I'),  # Pipe between letters -> I
+            (r'\b0(?=[A-Za-z])', 'O'),              # 0 before letters -> O
+            (r'(?<=[A-Za-z])1\b', 'I'),             # 1 after letters -> I
+        ]
+        
+        for pattern, replacement in corrections:
+            cleaned = re.sub(pattern, replacement, cleaned)
+        
+        # Normalize whitespace (preserve line breaks)
+        lines = cleaned.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            # Clean each line individually
+            cleaned_line = ' '.join(line.split())  # Normalize internal spaces
+            cleaned_lines.append(cleaned_line)
+        
+        # Rebuild text
+        cleaned = '\n'.join(cleaned_lines)
+        
+        return cleaned.strip()
+    
+    @staticmethod
+    def _clean_paragraph_enhanced(paragraph: str) -> str:
+        """Enhanced paragraph cleaning while preserving meaning"""
         lines = paragraph.split('\n')
         cleaned_lines = []
         
@@ -64,15 +157,15 @@ class TextFormatter:
             line = line.strip()
             if line:
                 line = re.sub(r'\s+', ' ', line)  # Normalize spaces
-                line = TextFormatter._fix_bullets(line)
-                line = TextFormatter._fix_common_errors(line)
+                line = UltimateTextFormatter._fix_bullets_enhanced(line)
+                line = UltimateTextFormatter._fix_common_errors_enhanced(line)
                 cleaned_lines.append(line)
         
         return ' '.join(cleaned_lines)
     
     @staticmethod
-    def _fix_bullets(line: str) -> str:
-        """Fix bullet point detection issues"""
+    def _fix_bullets_enhanced(line: str) -> str:
+        """Enhanced bullet point detection"""
         bullet_patterns = [
             (r'^[eE]\s+', '• '),
             (r'^[oO0]\s+', '• '),
@@ -90,8 +183,8 @@ class TextFormatter:
         return line
     
     @staticmethod
-    def _fix_common_errors(line: str) -> str:
-        """Fix common OCR character errors"""
+    def _fix_common_errors_enhanced(line: str) -> str:
+        """Enhanced common OCR character error fixing"""
         corrections = [
             (r'\|\s*', 'I'),
             (r'\[\s*', 'I'),
@@ -105,82 +198,6 @@ class TextFormatter:
             line = re.sub(pattern, replacement, line)
         
         return line
-    
-    @staticmethod
-    def format_html(text: str) -> str:
-        """
-        HTML formatting for easy copying
-        """
-        if not text:
-            return ""
-        
-        try:
-            # Split into paragraphs
-            paragraphs = text.split('\n\n')
-            html_paragraphs = []
-            
-            for paragraph in paragraphs:
-                if paragraph.strip():
-                    escaped_paragraph = html.escape(paragraph.strip())
-                    html_paragraphs.append(f"<p>{escaped_paragraph}</p>")
-            
-            return '\n'.join(html_paragraphs)
-            
-        except Exception as e:
-            print(f"HTML formatting error: {e}")
-            return f"<pre>{html.escape(text)}</pre>"
-    
-    @staticmethod
-    def format_preserved(text: str) -> str:
-        """
-        Maximum preservation - no changes to extracted text
-        Returns exactly what OCR extracted
-        """
-        return text if text else ""
-    
-    @staticmethod
-    def format_structured(text: str) -> str:
-        """
-        Intelligently structured format
-        - Best readability while preserving structure
-        - Recommended for most users
-        """
-        if not text:
-            return ""
-        
-        return TextFormatter.format_plain(text)
-    
-    @staticmethod
-    def format_text(text: str, format_type: str = 'structured') -> str:
-        """
-        Main formatting function
-        
-        Args:
-            text: Extracted text to format
-            format_type: 
-                - 'structured': Best readability (recommended)
-                - 'plain': Clean text
-                - 'preserved': No changes
-                - 'html': HTML format
-        """
-        if not text:
-            return ""
-            
-        format_type = format_type.lower()
-        
-        try:
-            if format_type == 'html':
-                return TextFormatter.format_html(text)
-            elif format_type == 'structured':
-                return TextFormatter.format_structured(text)
-            elif format_type == 'preserved':
-                return TextFormatter.format_preserved(text)
-            else:  # plain
-                return TextFormatter.format_plain(text)
-                
-        except Exception as e:
-            print(f"Formatting error: {e}")
-            return text
     
     @staticmethod
     def split_long_message(text: str, max_length: int = 4000) -> List[str]:
@@ -236,3 +253,9 @@ class TextFormatter:
             'avg_words_per_paragraph': round(avg_words_per_paragraph, 1),
             'structure_quality': 'Excellent' if avg_words_per_paragraph > 15 else 'Good' if avg_words_per_paragraph > 8 else 'Fair'
         }
+
+# Global instance
+ultimate_text_formatter = UltimateTextFormatter()
+
+# Backward compatibility
+TextFormatter = UltimateTextFormatter
