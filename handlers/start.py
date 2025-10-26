@@ -194,12 +194,12 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
     
     welcome_text = (
         f"🎉 *Welcome {user.first_name}!* 🌍\n\n"
-        "🤖 *Enhanced OCR Bot with 70+ Language Support*\n\n"
+        "🤖 *Smart Bot with 70+ Language Support*\n\n"
         "✨ *Features:*\n"
-        "• 🚀 Advanced text extraction\n"
-        "• 🌍 **70+ languages supported**\n"
-        "• 💬 **Plain Text & HTML formats**\n"
-        "• 🔤 Auto language detection\n\n"
+        "🚀 Advanced text extraction\n"
+        "🌍 **70+ languages supported**\n"
+        "💬 **Plain Text & HTML formats**\n"
+        "🔤 Auto language detection\n\n"
         "📸 *How to use:*\n"
         "1. Send me any image with text\n"
         "2. I'll extract and format the text automatically\n\n"

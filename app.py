@@ -44,11 +44,15 @@ OCR_AVAILABLE = False
 ultimate_ocr_processor = None
 fallback_ocr_processor = None
 
-# Try ULTIMATE OCR first
+# Try ULTIMATE OCR first with better error handling
 try:
     from utils.unified_ocr import ultimate_ocr_processor
-    OCR_AVAILABLE = True
-    logger.info("✅ ULTIMATE OCR Processor imported successfully")
+    if ultimate_ocr_processor is not None:
+        OCR_AVAILABLE = True
+        logger.info("✅ ULTIMATE OCR Processor imported successfully")
+    else:
+        logger.warning("❌ Ultimate OCR Processor is None")
+        OCR_AVAILABLE = False
 except ImportError as e:
     logger.warning(f"ULTIMATE OCR import failed: {e}")
     # Try fallback OCR
@@ -211,7 +215,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• ✅ Success rate: **{success_rate:.1f}%**\n"
             f"• 🕒 Recent activity: **{recent_count}** requests\n"
             f"• 🌍 Languages: **70+ supported**\n\n"
-            f"Keep converting images to build your stats! 📸",
+            f"Keep converting images to build your stats!",
             parse_mode='Markdown',
             reply_markup=get_reply_keyboard()
         )
@@ -287,7 +291,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"• ✅ Success rate: **{success_rate:.1f}%**\n"
                 f"• 🕒 Recent activity: **{recent_count}** requests\n"
                 f"• 🌍 Languages: **70+ supported**\n\n"
-                f"Keep converting images to build your stats! 📸",
+                f"Keep converting images to build your stats!",
                 parse_mode='Markdown',
                 reply_markup=get_reply_keyboard()
             )
@@ -425,7 +429,7 @@ async def show_statistics_menu(query):
             f"• ✅ Success rate: **{success_rate:.1f}%**\n"
             f"• 🕒 Recent activity: **{recent_count}** requests\n"
             f"• 🌍 Languages: **70+ supported**\n\n"
-            f"Keep converting images to build your stats! 📸",
+            f"Keep converting images to build your stats!",
             parse_mode='Markdown',
             reply_markup=get_back_keyboard()
         )
