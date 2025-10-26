@@ -1,13 +1,13 @@
-# handlers/start.py
+# handlers/start.py - FIXED VERSION
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
-from datetime import datetime
+from datetime import datetime, timedelta
 import config
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Store user verification status to avoid repeated checks
+# Store user verification status with shorter cache time
 user_verification_cache = {}
 
 def get_main_keyboard():
@@ -29,17 +29,17 @@ def get_channel_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    """Check if user is a member of the announcement channel with caching"""
-    # Check cache first
+    """ALWAYS check if user is a member of the announcement channel - REDUCED CACHE TIME"""
+    # Check cache first (reduced from 1 hour to 5 minutes)
     if user_id in user_verification_cache:
         cached_status = user_verification_cache[user_id]
-        # Cache expires after 1 hour
-        if (datetime.now() - cached_status['timestamp']).total_seconds() < 3600:
+        # Cache expires after 5 minutes instead of 1 hour
+        if (datetime.now() - cached_status['timestamp']).total_seconds() < 300:
             logger.info(f"🎯 Using cached membership status for user {user_id}: {cached_status['status']}")
             return cached_status['status']
     
     try:
-        logger.info(f"🔍 Checking membership for user {user_id}")
+        logger.info(f"🔍 REAL-TIME Checking membership for user {user_id}")
         
         chat_member = await context.bot.get_chat_member(
             chat_id=config.ANNOUNCEMENT_CHANNEL,
@@ -50,7 +50,7 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
         
         is_member = chat_member.status not in ['left', 'kicked', 'banned']
         
-        # Update cache
+        # Update cache with shorter time
         user_verification_cache[user_id] = {
             'status': is_member,
             'timestamp': datetime.now()
@@ -65,11 +65,11 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
         
     except Exception as e:
         logger.error(f"🚨 Error checking membership for user {user_id}: {e}")
-        # If bot can't access channel, allow user to proceed but don't cache
-        return True
+        # If bot can't access channel, don't allow user to proceed
+        return False  # Changed from True to False for security
 
 async def require_channel_membership(handler):
-    """Decorator to require channel membership for any handler"""
+    """Decorator to require channel membership for any handler - ENHANCED"""
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         
@@ -77,7 +77,7 @@ async def require_channel_membership(handler):
         if user.id in config.ADMIN_IDS:
             return await handler(update, context)
         
-        # Check membership
+        # ALWAYS check membership (no cache bypass)
         has_joined = await check_channel_membership(update, context, user.id)
         
         if not has_joined:
@@ -111,18 +111,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_channel_requirement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show channel join requirement"""
     message_text = (
-        "👋 *Welcome to Enhanced OCR Bot!* 📸\n\n"
+        "👋 *Welcome to Smart Bot!* 📸\n\n"
         "📢 *Join Our Channel First*\n\n"
-        "Please join our channel to use this bot:\n"
-        "• 🚀 Get updates and new features\n"
-        "• 💡 Learn usage tips\n"
-        "• 🌍 70+ language support\n"
-        "• 🔧 Stay informed about maintenance\n\n"
+        "To use this bot, you must be a member of our channel:\n"
+        f"**@{config.CHANNEL_USERNAME}**\n\n"
         "*Steps:*\n"
         "1. Click 'Join Announcement Channel'\n"
         "2. Join the channel\n"
         "3. Click 'I've Joined'\n"
-        "4. Start converting images! 🎉"
+        "4. Start converting images! 🎉\n\n"
+        "💡 *Note:* You must stay in the channel to continue using the bot."
     )
     
     try:
@@ -153,7 +151,7 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"🔄 User {user.id} checking membership...")
     
-    # Clear cache to force fresh check
+    # ALWAYS clear cache to force fresh check
     if user.id in user_verification_cache:
         del user_verification_cache[user.id]
     
@@ -166,7 +164,7 @@ async def handle_membership_check(update: Update, context: ContextTypes.DEFAULT_
     else:
         logger.warning(f"❌ User {user.id} not verified")
         await query.answer(
-            "❌ Please join the channel and wait a moment before clicking 'I've Joined'.",
+            "❌ Please join the channel first, then click 'I've Joined'. Make sure you're still in the channel!",
             show_alert=True
         )
 
@@ -196,10 +194,10 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         f"🎉 *Welcome {user.first_name}!* 🌍\n\n"
         "🤖 *Smart Bot with 70+ Language Support*\n\n"
         "✨ *Features:*\n"
-        "🚀 Advanced text extraction\n"
-        "🌍 **70+ languages supported**\n"
-        "💬 **Plain Text & HTML formats**\n"
-        "🔤 Auto language detection\n\n"
+        "• 🚀 Advanced text extraction\n"
+        "• 🌍 **70+ languages supported**\n"
+        "• 💬 **Plain Text & HTML formats**\n"
+        "• 🔤 Auto language detection\n\n"
         "📸 *How to use:*\n"
         "1. Send me any image with text\n"
         "2. I'll extract and format the text automatically\n\n"
@@ -207,7 +205,8 @@ async def process_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "• Clear, well-lit images\n"
         "• Focused, non-blurry text\n"
         "• High contrast\n"
-        "• Horizontal text alignment"
+        "• Horizontal text alignment\n\n"
+        "⚠️ *Note:* You must stay in @ImageToTextConverter to continue using the bot."
     )
     
     # Import reply keyboard from app
